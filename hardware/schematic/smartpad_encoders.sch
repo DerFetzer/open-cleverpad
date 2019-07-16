@@ -1,0 +1,409 @@
+EESchema Schematic File Version 4
+LIBS:smartpad-cache
+EELAYER 29 0
+EELAYER END
+$Descr A4 11693 8268
+encoding utf-8
+Sheet 2 4
+Title ""
+Date ""
+Rev ""
+Comp ""
+Comment1 ""
+Comment2 ""
+Comment3 ""
+Comment4 ""
+$EndDescr
+$Comp
+L Device:Rotary_Encoder K1
+U 1 1 5D438A82
+P 9400 1750
+F 0 "K1" V 9389 1520 50  0000 R CNN
+F 1 "Rotary_Encoder" V 9298 1520 50  0000 R CNN
+F 2 "" H 9250 1910 50  0001 C CNN
+F 3 "~" H 9400 2010 50  0001 C CNN
+	1    9400 1750
+	0    -1   -1   0   
+$EndComp
+$Comp
+L Device:Rotary_Encoder K2
+U 1 1 5D43B597
+P 8350 1750
+F 0 "K2" V 8339 1520 50  0000 R CNN
+F 1 "Rotary_Encoder" V 8248 1520 50  0000 R CNN
+F 2 "" H 8200 1910 50  0001 C CNN
+F 3 "~" H 8350 2010 50  0001 C CNN
+	1    8350 1750
+	0    -1   -1   0   
+$EndComp
+$Comp
+L Device:Rotary_Encoder K3
+U 1 1 5D43BF02
+P 7300 1750
+F 0 "K3" V 7289 1520 50  0000 R CNN
+F 1 "Rotary_Encoder" V 7198 1520 50  0000 R CNN
+F 2 "" H 7150 1910 50  0001 C CNN
+F 3 "~" H 7300 2010 50  0001 C CNN
+	1    7300 1750
+	0    -1   -1   0   
+$EndComp
+$Comp
+L Device:Rotary_Encoder K4
+U 1 1 5D43C82F
+P 6250 1750
+F 0 "K4" V 6239 1520 50  0000 R CNN
+F 1 "Rotary_Encoder" V 6148 1520 50  0000 R CNN
+F 2 "" H 6100 1910 50  0001 C CNN
+F 3 "~" H 6250 2010 50  0001 C CNN
+	1    6250 1750
+	0    -1   -1   0   
+$EndComp
+$Comp
+L Device:Rotary_Encoder K5
+U 1 1 5D43D8B8
+P 5200 1750
+F 0 "K5" V 5189 1520 50  0000 R CNN
+F 1 "Rotary_Encoder" V 5098 1520 50  0000 R CNN
+F 2 "" H 5050 1910 50  0001 C CNN
+F 3 "~" H 5200 2010 50  0001 C CNN
+	1    5200 1750
+	0    -1   -1   0   
+$EndComp
+$Comp
+L Device:Rotary_Encoder K6
+U 1 1 5D43DEC3
+P 4150 1750
+F 0 "K6" V 4139 1520 50  0000 R CNN
+F 1 "Rotary_Encoder" V 4048 1520 50  0000 R CNN
+F 2 "" H 4000 1910 50  0001 C CNN
+F 3 "~" H 4150 2010 50  0001 C CNN
+	1    4150 1750
+	0    -1   -1   0   
+$EndComp
+$Comp
+L Device:Rotary_Encoder K7
+U 1 1 5D43E2F8
+P 3100 1750
+F 0 "K7" V 3089 1520 50  0000 R CNN
+F 1 "Rotary_Encoder" V 2998 1520 50  0000 R CNN
+F 2 "" H 2950 1910 50  0001 C CNN
+F 3 "~" H 3100 2010 50  0001 C CNN
+	1    3100 1750
+	0    -1   -1   0   
+$EndComp
+$Comp
+L Device:Rotary_Encoder K8
+U 1 1 5D43E6BC
+P 2050 1750
+F 0 "K8" V 2039 1520 50  0000 R CNN
+F 1 "Rotary_Encoder" V 1948 1520 50  0000 R CNN
+F 2 "" H 1900 1910 50  0001 C CNN
+F 3 "~" H 2050 2010 50  0001 C CNN
+	1    2050 1750
+	0    -1   -1   0   
+$EndComp
+Wire Wire Line
+	8350 2050 8350 3700
+Wire Wire Line
+	7300 2050 7300 3700
+Wire Wire Line
+	6250 2050 6250 3700
+Wire Wire Line
+	5200 2050 5200 3700
+Wire Wire Line
+	4150 2050 4150 3700
+Wire Wire Line
+	3100 2050 3100 3700
+Wire Wire Line
+	2050 2050 2050 3700
+Entry Wire Line
+	9400 3700 9500 3800
+Entry Wire Line
+	8350 3700 8450 3800
+Entry Wire Line
+	7300 3700 7400 3800
+Entry Wire Line
+	6250 3700 6350 3800
+Entry Wire Line
+	5200 3700 5300 3800
+Entry Wire Line
+	4150 3700 4250 3800
+Entry Wire Line
+	3100 3700 3200 3800
+Entry Wire Line
+	2050 3700 2150 3800
+Wire Wire Line
+	9400 2050 9400 3700
+Text Label 5200 3550 0    50   ~ 0
+KC5
+Text Label 4150 3550 0    50   ~ 0
+KC6
+Text Label 3100 3550 0    50   ~ 0
+KC7
+Text Label 2050 3550 0    50   ~ 0
+KC8
+Text HLabel 1900 3800 0    50   Input ~ 0
+KC[8..1]
+$Comp
+L Device:D_Small_ALT D2
+U 1 1 5D48F158
+P 9500 2150
+F 0 "D2" V 9454 2218 50  0000 L CNN
+F 1 "D_Small_ALT" V 9545 2218 50  0000 L CNN
+F 2 "" V 9500 2150 50  0001 C CNN
+F 3 "~" V 9500 2150 50  0001 C CNN
+	1    9500 2150
+	0    1    1    0   
+$EndComp
+$Comp
+L Device:D_Small_ALT D3
+U 1 1 5D48FA7E
+P 9300 2150
+F 0 "D3" V 9254 2218 50  0000 L CNN
+F 1 "D_Small_ALT" V 9345 2218 50  0000 L CNN
+F 2 "" V 9300 2150 50  0001 C CNN
+F 3 "~" V 9300 2150 50  0001 C CNN
+	1    9300 2150
+	0    1    1    0   
+$EndComp
+$Comp
+L Device:D_Small_ALT D4
+U 1 1 5D48FC82
+P 8450 2150
+F 0 "D4" V 8404 2218 50  0000 L CNN
+F 1 "D_Small_ALT" V 8495 2218 50  0000 L CNN
+F 2 "" V 8450 2150 50  0001 C CNN
+F 3 "~" V 8450 2150 50  0001 C CNN
+	1    8450 2150
+	0    1    1    0   
+$EndComp
+$Comp
+L Device:D_Small_ALT D5
+U 1 1 5D4900FD
+P 8250 2150
+F 0 "D5" V 8204 2218 50  0000 L CNN
+F 1 "D_Small_ALT" V 8295 2218 50  0000 L CNN
+F 2 "" V 8250 2150 50  0001 C CNN
+F 3 "~" V 8250 2150 50  0001 C CNN
+	1    8250 2150
+	0    1    1    0   
+$EndComp
+$Comp
+L Device:D_Small_ALT D6
+U 1 1 5D4902B3
+P 7400 2150
+F 0 "D6" V 7354 2218 50  0000 L CNN
+F 1 "D_Small_ALT" V 7445 2218 50  0000 L CNN
+F 2 "" V 7400 2150 50  0001 C CNN
+F 3 "~" V 7400 2150 50  0001 C CNN
+	1    7400 2150
+	0    1    1    0   
+$EndComp
+$Comp
+L Device:D_Small_ALT D7
+U 1 1 5D4905A0
+P 7200 2150
+F 0 "D7" V 7154 2218 50  0000 L CNN
+F 1 "D_Small_ALT" V 7245 2218 50  0000 L CNN
+F 2 "" V 7200 2150 50  0001 C CNN
+F 3 "~" V 7200 2150 50  0001 C CNN
+	1    7200 2150
+	0    1    1    0   
+$EndComp
+$Comp
+L Device:D_Small_ALT D8
+U 1 1 5D490898
+P 6350 2150
+F 0 "D8" V 6304 2218 50  0000 L CNN
+F 1 "D_Small_ALT" V 6395 2218 50  0000 L CNN
+F 2 "" V 6350 2150 50  0001 C CNN
+F 3 "~" V 6350 2150 50  0001 C CNN
+	1    6350 2150
+	0    1    1    0   
+$EndComp
+$Comp
+L Device:D_Small_ALT D9
+U 1 1 5D490CA9
+P 6150 2150
+F 0 "D9" V 6104 2218 50  0000 L CNN
+F 1 "D_Small_ALT" V 6195 2218 50  0000 L CNN
+F 2 "" V 6150 2150 50  0001 C CNN
+F 3 "~" V 6150 2150 50  0001 C CNN
+	1    6150 2150
+	0    1    1    0   
+$EndComp
+$Comp
+L Device:D_Small_ALT D10
+U 1 1 5D490E9F
+P 5300 2150
+F 0 "D10" V 5254 2218 50  0000 L CNN
+F 1 "D_Small_ALT" V 5345 2218 50  0000 L CNN
+F 2 "" V 5300 2150 50  0001 C CNN
+F 3 "~" V 5300 2150 50  0001 C CNN
+	1    5300 2150
+	0    1    1    0   
+$EndComp
+$Comp
+L Device:D_Small_ALT D11
+U 1 1 5D4912C1
+P 5100 2150
+F 0 "D11" V 5054 2218 50  0000 L CNN
+F 1 "D_Small_ALT" V 5145 2218 50  0000 L CNN
+F 2 "" V 5100 2150 50  0001 C CNN
+F 3 "~" V 5100 2150 50  0001 C CNN
+	1    5100 2150
+	0    1    1    0   
+$EndComp
+$Comp
+L Device:D_Small_ALT D12
+U 1 1 5D49156D
+P 4250 2150
+F 0 "D12" V 4204 2218 50  0000 L CNN
+F 1 "D_Small_ALT" V 4295 2218 50  0000 L CNN
+F 2 "" V 4250 2150 50  0001 C CNN
+F 3 "~" V 4250 2150 50  0001 C CNN
+	1    4250 2150
+	0    1    1    0   
+$EndComp
+$Comp
+L Device:D_Small_ALT D13
+U 1 1 5D49197D
+P 4050 2150
+F 0 "D13" V 4004 2218 50  0000 L CNN
+F 1 "D_Small_ALT" V 4095 2218 50  0000 L CNN
+F 2 "" V 4050 2150 50  0001 C CNN
+F 3 "~" V 4050 2150 50  0001 C CNN
+	1    4050 2150
+	0    1    1    0   
+$EndComp
+$Comp
+L Device:D_Small_ALT D14
+U 1 1 5D491C30
+P 3200 2150
+F 0 "D14" V 3154 2218 50  0000 L CNN
+F 1 "D_Small_ALT" V 3245 2218 50  0000 L CNN
+F 2 "" V 3200 2150 50  0001 C CNN
+F 3 "~" V 3200 2150 50  0001 C CNN
+	1    3200 2150
+	0    1    1    0   
+$EndComp
+$Comp
+L Device:D_Small_ALT D15
+U 1 1 5D491F89
+P 3000 2150
+F 0 "D15" V 2954 2218 50  0000 L CNN
+F 1 "D_Small_ALT" V 3045 2218 50  0000 L CNN
+F 2 "" V 3000 2150 50  0001 C CNN
+F 3 "~" V 3000 2150 50  0001 C CNN
+	1    3000 2150
+	0    1    1    0   
+$EndComp
+$Comp
+L Device:D_Small_ALT D16
+U 1 1 5D4921DF
+P 2150 2150
+F 0 "D16" V 2104 2218 50  0000 L CNN
+F 1 "D_Small_ALT" V 2195 2218 50  0000 L CNN
+F 2 "" V 2150 2150 50  0001 C CNN
+F 3 "~" V 2150 2150 50  0001 C CNN
+	1    2150 2150
+	0    1    1    0   
+$EndComp
+$Comp
+L Device:D_Small_ALT D17
+U 1 1 5D492445
+P 1950 2150
+F 0 "D17" V 1904 2218 50  0000 L CNN
+F 1 "D_Small_ALT" V 1995 2218 50  0000 L CNN
+F 2 "" V 1950 2150 50  0001 C CNN
+F 3 "~" V 1950 2150 50  0001 C CNN
+	1    1950 2150
+	0    1    1    0   
+$EndComp
+Wire Wire Line
+	9500 2250 9500 2700
+Wire Wire Line
+	9500 2700 8450 2700
+Wire Wire Line
+	2150 2700 2150 2250
+Wire Wire Line
+	9300 2250 9300 2600
+Wire Wire Line
+	9300 2600 8250 2600
+Wire Wire Line
+	1950 2600 1950 2250
+Wire Wire Line
+	8450 2250 8450 2700
+Connection ~ 8450 2700
+Wire Wire Line
+	8450 2700 7400 2700
+Wire Wire Line
+	7400 2250 7400 2700
+Connection ~ 7400 2700
+Wire Wire Line
+	7400 2700 6350 2700
+Wire Wire Line
+	6350 2250 6350 2700
+Connection ~ 6350 2700
+Wire Wire Line
+	6350 2700 5300 2700
+Wire Wire Line
+	5300 2250 5300 2700
+Connection ~ 5300 2700
+Wire Wire Line
+	5300 2700 4250 2700
+Wire Wire Line
+	4250 2250 4250 2700
+Connection ~ 4250 2700
+Wire Wire Line
+	4250 2700 3200 2700
+Wire Wire Line
+	3200 2250 3200 2700
+Connection ~ 3200 2700
+Wire Wire Line
+	3200 2700 2150 2700
+Wire Wire Line
+	3000 2250 3000 2600
+Connection ~ 3000 2600
+Wire Wire Line
+	3000 2600 1950 2600
+Wire Wire Line
+	4050 2250 4050 2600
+Connection ~ 4050 2600
+Wire Wire Line
+	4050 2600 3000 2600
+Wire Wire Line
+	5100 2250 5100 2600
+Connection ~ 5100 2600
+Wire Wire Line
+	5100 2600 4050 2600
+Wire Wire Line
+	6150 2250 6150 2600
+Connection ~ 6150 2600
+Wire Wire Line
+	6150 2600 5100 2600
+Wire Wire Line
+	7200 2250 7200 2600
+Connection ~ 7200 2600
+Wire Wire Line
+	7200 2600 6150 2600
+Wire Wire Line
+	8250 2250 8250 2600
+Wire Bus Line
+	1900 3800 9600 3800
+Connection ~ 8250 2600
+Wire Wire Line
+	8250 2600 7200 2600
+Text HLabel 1950 2600 0    50   Input ~ 0
+KA
+Text HLabel 2150 2700 0    50   Input ~ 0
+KB
+Text Label 6250 3550 0    50   ~ 0
+KC4
+Text Label 7300 3550 0    50   ~ 0
+KC3
+Text Label 8350 3550 0    50   ~ 0
+KC2
+Text Label 9400 3550 0    50   ~ 0
+C1
+$EndSCHEMATC

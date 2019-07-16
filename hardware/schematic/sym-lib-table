@@ -1,0 +1,3 @@
+(sym_lib_table
+  (lib (name smartpad)(type Legacy)(uri ${KIPRJMOD}/smartpad.lib)(options "")(descr ""))
+)

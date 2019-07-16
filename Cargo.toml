@@ -16,6 +16,12 @@ version = "0.1.0"
 authors = ["DerFetzer <kontakt@der-fetzer.de>"]
 edition = "2018"
 
+# this lets you use `cargo fix`!
+[[bin]]
+name = "open-cleverpad"
+test = false
+bench = false
+
 [profile.release]
 lto = true
 codegen-units = 1

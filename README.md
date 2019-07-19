@@ -27,8 +27,6 @@ For reverse engineered information about the used hardware see [hardware](hardwa
 
 ## Dependencies
 
-To build embedded programs using this template you'll need:
-
 - `rust-std` components (pre-compiled `core` crate) for the ARM Cortex-M3
   targets. Run:
 

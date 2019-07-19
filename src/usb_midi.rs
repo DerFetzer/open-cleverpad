@@ -1,5 +1,6 @@
 use usb_device::class_prelude::*;
 use usb_device::Result;
+use core::borrow::Borrow;
 
 pub const USB_CLASS_AUDIO: u8 = 0x01;
 const AUDIO_SUBCLASS_CONTROL: u8 = 0x01;
@@ -20,6 +21,9 @@ pub struct MidiClass<'a, B: UsbBus> {
     ms_if: InterfaceNumber,
     read_ep: EndpointOut<'a, B>,
     write_ep: EndpointIn<'a, B>,
+    write_next: Option<[u8; 4]>,
+    read_buf: [u8; 64],
+    write_buf: [u8; 64]
 }
 
 impl<'a, B: UsbBus> MidiClass<'a, B> {
@@ -29,7 +33,47 @@ impl<'a, B: UsbBus> MidiClass<'a, B> {
             ms_if: alloc.interface(),
             read_ep: alloc.bulk(64),
             write_ep: alloc.bulk(64),
+            write_next: None,
+            read_buf: [0; 64],
+            write_buf: [0; 64]
         }
+    }
+
+    pub fn write(&mut self, data: &[u8]) -> Result<usize> {
+        match self.write_ep.write(data) {
+            Ok(count) => Ok(count),
+            Err(UsbError::WouldBlock) => Ok(0),
+            e => e
+        }
+    }
+
+    pub fn write_next(&mut self) -> Result<usize> {
+        if let Some(data) = self.write_next {
+            match self.write(data.borrow()) {
+                Ok(count) if count == data.len() => {
+                    self.write_next = None;
+                    Ok(count)
+                },
+                e => e
+            }
+        }
+        else {
+            Ok(0)
+        }
+    }
+
+    pub fn set_next(&mut self, data: [u8; 4]) -> Result<usize> {
+        if let None = self.write_next {
+            self.write_next = Some(data);
+            Ok(4)
+        }
+        else {
+            Err(UsbError::Unsupported)
+        }
+    }
+
+    pub fn has_next(&mut self) -> bool {
+        self.write_next.is_some()
     }
 }
 

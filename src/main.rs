@@ -254,9 +254,10 @@ const APP: () = {
             .unwrap();
     }
 
-    #[task(resources = [LEDS])]
+    #[task(resources = [LEDS, MIDI])]
     fn activate_debug_leds() {
         resources.LEDS.lock(|l| l.set_bank_value(0, 0xFFFFFFFF));
+        resources.MIDI.lock(|m| m.set_next([0x09, 0x90, 0x37, 0x47]));
         let mut delay = AsmDelay::new(bitrate::U32BitrateExt::mhz(72));
         delay.delay_ms(200_u32);
         resources.LEDS.lock(|l| l.set_bank_value(0, 0x0));
@@ -285,6 +286,10 @@ fn usb_poll<B: bus::UsbBus>(
 ) {
     if !usb_dev.poll(&mut [midi]) {
         return;
+    }
+
+    if midi.has_next() {
+        midi.write_next();
     }
 }
 

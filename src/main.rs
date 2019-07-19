@@ -2,13 +2,14 @@
 //#![deny(warnings)]
 #![no_main]
 #![no_std]
+#![allow(non_snake_case)]
 
 use panic_semihosting;
 
-use cortex_m::asm::wfi;
+use cortex_m::asm::{delay, wfi};
 
-#[cfg(debug_assertions)]
-use cortex_m_semihosting::hprintln;
+/*#[cfg(debug_assertions)]
+use cortex_m_semihosting::hprintln;*/
 
 use rtfm::Instant;
 
@@ -22,9 +23,14 @@ use stm32f1xx_hal::gpio::gpiob::{
 use stm32f1xx_hal::gpio::gpioc::{PC0, PC1, PC10, PC11, PC12, PC13, PC14, PC15, PC2, PC8, PC9};
 use stm32f1xx_hal::gpio::State::High;
 use stm32f1xx_hal::gpio::{Floating, Input, OpenDrain, Output, PushPull};
+use stm32f1xx_hal::prelude::*;
 use stm32f1xx_hal::qei::Qei;
-use stm32f1xx_hal::rcc::{Rcc, APB2};
-use stm32f1xx_hal::{pac, prelude::*, timer::Timer};
+
+use stm32_usbd::{UsbBus, UsbBusType};
+use usb_device::bus;
+use usb_device::prelude::*;
+
+mod usb_midi;
 
 // SYSCLK = 72MHz --> clock_period = 13.9ns
 
@@ -34,8 +40,6 @@ const LED_BANK_PERIOD: u32 = 700_000; // ~.1kHz
 const ENC_SEL_PERIOD: u32 = 70_000; // ~1kHz
 #[cfg(debug_assertions)]
 const BUTTON_COL_PERIOD: u32 = 700_000; // ~.1kHz
-#[cfg(debug_assertions)]
-const DEBUG_OUTPUT_PERIOD: u32 = 140_000_000;
 
 #[cfg(not(debug_assertions))]
 const LED_BANK_PERIOD: u32 = 70_000; // ~1kHz
@@ -44,15 +48,21 @@ const ENC_SEL_PERIOD: u32 = 70_000; // ~1kHz
 #[cfg(not(debug_assertions))]
 const BUTTON_COL_PERIOD: u32 = 700_000; // ~.1kHz
 
+const VID: u16 = 0x1122;
+const PID: u16 = 0x3344;
+
 #[rtfm::app(device = stm32f1xx_hal::pac)]
 const APP: () = {
     static mut LEDS: Leds = ();
     static mut ENCODERS: Encoders = ();
     static mut BUTTON_MATRIX: ButtonMatrix = ();
 
-    #[init(schedule = [led_bank, enc, button, debug_output])]
+    static mut USB_DEV: UsbDevice<'static, UsbBusType> = ();
+    static mut MIDI: usb_midi::MidiClass<'static, UsbBusType> = ();
+
+    #[init(schedule = [led_bank, enc, button])]
     fn init() -> init::LateResources {
-        //hprintln!("Init").unwrap();
+        static mut USB_BUS: Option<bus::UsbBusAllocator<UsbBusType>> = None;
 
         // Take ownership over the raw flash and rcc devices and convert them into the corresponding
         // HAL structs
@@ -67,6 +77,8 @@ const APP: () = {
             .sysclk(72.mhz())
             .pclk1(36.mhz())
             .freeze(&mut flash.acr);
+
+        assert!(clocks.usbclk_valid());
 
         let mut afio = device.AFIO.constrain(&mut rcc.apb2);
 
@@ -169,6 +181,24 @@ const APP: () = {
                 .into_open_drain_output_with_state(&mut gpiob.crh, High),
         };
 
+        // USB
+        let _usb_pullup = gpioa
+            .pa8
+            .into_push_pull_output_with_state(&mut gpioa.crh, High);
+
+        let usb_dm = gpioa.pa11;
+        let usb_dp = gpioa.pa12;
+
+        *USB_BUS = Some(UsbBus::new(device.USB, (usb_dm, usb_dp)));
+
+        let midi = usb_midi::MidiClass::new(USB_BUS.as_ref().unwrap());
+
+        let usb_dev = UsbDeviceBuilder::new(USB_BUS.as_ref().unwrap(), UsbVidPid(VID, PID))
+            .manufacturer("derfetzer")
+            .product("open-cleverpad")
+            .serial_number("12345678")
+            .build();
+
         schedule
             .led_bank(Instant::now() + LED_BANK_PERIOD.cycles())
             .unwrap();
@@ -179,21 +209,14 @@ const APP: () = {
             .button(Instant::now() + BUTTON_COL_PERIOD.cycles())
             .unwrap();
 
-        #[cfg(debug_assertions)]
-        {
-            schedule
-                .debug_output(Instant::now() + DEBUG_OUTPUT_PERIOD.cycles())
-                .unwrap();
-        }
-
-        let led_delay = AsmDelay::new(bitrate::U32BitrateExt::mhz(72));
         let button_delay = AsmDelay::new(bitrate::U32BitrateExt::mhz(72));
-        let enc_delay = AsmDelay::new(bitrate::U32BitrateExt::mhz(72));
 
         init::LateResources {
-            LEDS: Leds::new(led_pins, led_delay),
-            ENCODERS: Encoders::new(qei, encoder_pins, enc_delay),
+            LEDS: Leds::new(led_pins),
+            ENCODERS: Encoders::new(qei, encoder_pins),
             BUTTON_MATRIX: ButtonMatrix::new(button_pins, button_delay),
+            USB_DEV: usb_dev,
+            MIDI: midi,
         }
     }
 
@@ -202,21 +225,6 @@ const APP: () = {
         loop {
             wfi();
         }
-    }
-
-    #[cfg(debug_assertions)]
-    #[task(schedule = [debug_output], resources = [LEDS, ENCODERS, BUTTON_MATRIX])]
-    fn debug_output() {
-        let enc_states = resources.ENCODERS.lock(|e| e.positions);
-
-        let button_rows = resources.BUTTON_MATRIX.lock(|b| b.rows);
-
-        //hprintln!("{:?}", enc_states).unwrap();
-        //hprintln!("Button columns: {:?}", button_rows).unwrap();
-
-        schedule
-            .debug_output(scheduled + DEBUG_OUTPUT_PERIOD.cycles())
-            .unwrap();
     }
 
     #[task(priority = 3, schedule = [led_bank], resources = [LEDS])]
@@ -228,9 +236,11 @@ const APP: () = {
             .unwrap();
     }
 
-    #[task(priority = 3, schedule = [enc], resources = [ENCODERS])]
+    #[task(priority = 3, schedule = [enc], spawn = [activate_debug_leds], resources = [ENCODERS])]
     fn enc() {
-        resources.ENCODERS.next_encoder();
+        if resources.ENCODERS.next_encoder() {
+            spawn.activate_debug_leds();
+        }
 
         schedule.enc(scheduled + ENC_SEL_PERIOD.cycles()).unwrap();
     }
@@ -244,6 +254,24 @@ const APP: () = {
             .unwrap();
     }
 
+    #[task(resources = [LEDS])]
+    fn activate_debug_leds() {
+        resources.LEDS.lock(|l| l.set_bank_value(0, 0xFFFFFFFF));
+        let mut delay = AsmDelay::new(bitrate::U32BitrateExt::mhz(72));
+        delay.delay_ms(200_u32);
+        resources.LEDS.lock(|l| l.set_bank_value(0, 0x0));
+    }
+
+    #[interrupt(resources = [USB_DEV, MIDI])]
+    fn USB_HP_CAN_TX() {
+        usb_poll(&mut resources.USB_DEV, &mut resources.MIDI);
+    }
+
+    #[interrupt(resources = [USB_DEV, MIDI])]
+    fn USB_LP_CAN_RX0() {
+        usb_poll(&mut resources.USB_DEV, &mut resources.MIDI);
+    }
+
     extern "C" {
         fn EXTI1();
         fn EXTI2();
@@ -251,9 +279,18 @@ const APP: () = {
     }
 };
 
+fn usb_poll<B: bus::UsbBus>(
+    usb_dev: &mut UsbDevice<'static, B>,
+    midi: &mut usb_midi::MidiClass<'static, B>,
+) {
+    if !usb_dev.poll(&mut [midi]) {
+        return;
+    }
+}
+
 pub struct ButtonMatrix {
     pins: ButtonMatrixPins,
-    pub rows: [u8; 11],
+    rows: [u8; 11],
     delay: AsmDelay,
 }
 
@@ -261,7 +298,7 @@ impl ButtonMatrix {
     fn new(pins: ButtonMatrixPins, delay: AsmDelay) -> Self {
         ButtonMatrix {
             pins,
-            rows: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            rows: [0; 11],
             delay,
         }
     }
@@ -343,25 +380,22 @@ pub struct ButtonMatrixPins {
 pub struct Encoders {
     qei: Qei<TIM2, (PA0<Input<Floating>>, PA1<Input<Floating>>)>,
     pins: EncoderPins,
-    pub positions: [i16; 8],
+    positions: [i16; 8],
     current_encoder: usize,
     last_count: u16,
-    delay: AsmDelay,
 }
 
 impl Encoders {
     fn new(
         qei: Qei<TIM2, (PA0<Input<Floating>>, PA1<Input<Floating>>)>,
         pins: EncoderPins,
-        delay: AsmDelay,
     ) -> Self {
         Encoders {
             qei,
             pins,
-            positions: [0, 0, 0, 0, 0, 0, 0, 0],
+            positions: [0; 8],
             current_encoder: 0,
             last_count: 0,
-            delay,
         }
     }
 
@@ -369,7 +403,7 @@ impl Encoders {
         self.positions
     }
 
-    fn next_encoder(&mut self) {
+    fn next_encoder(&mut self) -> bool {
         let current_count = self.qei.count();
         let last_count = self.last_count;
         let diff = current_count.wrapping_sub(last_count) as i16;
@@ -398,6 +432,8 @@ impl Encoders {
         }
 
         self.last_count = self.qei.count();
+
+        diff != 0
     }
 }
 
@@ -409,18 +445,16 @@ pub struct EncoderPins {
 
 pub struct Leds {
     pins: LedPins,
-    banks: [u32; 8],
+    pub banks: [u32; 8],
     current_bank: usize,
-    delay: AsmDelay,
 }
 
 impl Leds {
-    fn new(pins: LedPins, delay: AsmDelay) -> Self {
+    fn new(pins: LedPins) -> Self {
         Leds {
             pins,
-            banks: [0, 0, 0, 0, 0, 0, 0, 0],
+            banks: [0; 8],
             current_bank: 0,
-            delay,
         }
     }
 
@@ -463,16 +497,16 @@ impl Leds {
             } else {
                 self.pins.ls_dai.set_high();
             }
-            self.delay.delay_us(1_u32);
+            delay(4);
             self.pins.ls_dck.set_high();
-            self.delay.delay_us(1_u32);
+            delay(4);
             self.pins.ls_dck.set_low();
         }
-        self.delay.delay_us(1_u32);
+        delay(4);
         self.pins.ls_lat.set_high();
-        self.delay.delay_us(1_u32);
+        delay(4);
         self.pins.ls_lat.set_low();
-        self.delay.delay_us(1_u32);
+        delay(4);
 
         self.pins.ls_en_l.set_low();
         self.pins.hs_en_l.set_low();

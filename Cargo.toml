@@ -10,11 +10,16 @@
 # editing this file be aware that the upstream Cargo.toml
 # will likely look very different (and much more reasonable)
 
+cargo-features = ["profile-overrides"] # +
+
 [package]
 name = "open-cleverpad"
 version = "0.1.0"
 authors = ["DerFetzer <kontakt@der-fetzer.de>"]
 edition = "2018"
+
+[profile.dev.overrides."*"] # +
+opt-level = "z" # +
 
 # this lets you use `cargo fix`!
 [[bin]]
@@ -55,3 +60,5 @@ version = "0.5.2"
 asm-delay = "0.7.0"
 bitrate = "0.1.1"
 panic-halt = "0.2.0"
+usb-device = "0.2.1"
+stm32-usbd = { version = "0.3", features = ["stm32f103xx"] }

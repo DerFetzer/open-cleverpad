@@ -8,8 +8,7 @@ use panic_semihosting;
 
 use cortex_m::asm::{delay, wfi};
 
-/*#[cfg(debug_assertions)]
-use cortex_m_semihosting::hprintln;*/
+use cortex_m_semihosting::hprintln;
 
 use rtfm::Instant;
 
@@ -26,10 +25,12 @@ use stm32f1xx_hal::gpio::{Floating, Input, OpenDrain, Output, PushPull};
 use stm32f1xx_hal::prelude::*;
 use stm32f1xx_hal::qei::Qei;
 
+use crate::midi::{MidiMessage, NoteOn};
 use stm32_usbd::{UsbBus, UsbBusType};
 use usb_device::bus;
 use usb_device::prelude::*;
 
+mod midi;
 mod usb_midi;
 
 // SYSCLK = 72MHz --> clock_period = 13.9ns
@@ -257,20 +258,36 @@ const APP: () = {
     #[task(resources = [LEDS, MIDI])]
     fn activate_debug_leds() {
         resources.LEDS.lock(|l| l.set_bank_value(0, 0xFFFFFFFF));
-        resources.MIDI.lock(|m| m.set_next([0x09, 0x90, 0x37, 0x47]));
+        resources
+            .MIDI
+            .lock(|m| {
+                m.enqueue(NoteOn::new(0, 0x37, 0x47).unwrap().to_bytes());
+                match m.dequeue() {
+                    Some(message) => {
+                        if let Some(note_on) = NoteOn::from_bytes(message) {
+                            hprintln!("{:?}", note_on).unwrap()
+                        }
+                    },
+                    _ => ()
+                }
+            });
         let mut delay = AsmDelay::new(bitrate::U32BitrateExt::mhz(72));
         delay.delay_ms(200_u32);
         resources.LEDS.lock(|l| l.set_bank_value(0, 0x0));
     }
 
-    #[interrupt(resources = [USB_DEV, MIDI])]
+    #[interrupt(resources = [USB_DEV, MIDI], spawn = [activate_debug_leds])]
     fn USB_HP_CAN_TX() {
-        usb_poll(&mut resources.USB_DEV, &mut resources.MIDI);
+        if usb_poll(&mut resources.USB_DEV, &mut resources.MIDI) {
+            spawn.activate_debug_leds();
+        };
     }
 
-    #[interrupt(resources = [USB_DEV, MIDI])]
+    #[interrupt(resources = [USB_DEV, MIDI], spawn = [activate_debug_leds])]
     fn USB_LP_CAN_RX0() {
-        usb_poll(&mut resources.USB_DEV, &mut resources.MIDI);
+        if usb_poll(&mut resources.USB_DEV, &mut resources.MIDI) {
+            spawn.activate_debug_leds();
+        };
     }
 
     extern "C" {
@@ -283,13 +300,18 @@ const APP: () = {
 fn usb_poll<B: bus::UsbBus>(
     usb_dev: &mut UsbDevice<'static, B>,
     midi: &mut usb_midi::MidiClass<'static, B>,
-) {
+) -> bool {
     if !usb_dev.poll(&mut [midi]) {
-        return;
+        return false;
     }
 
-    if midi.has_next() {
-        midi.write_next();
+    if !midi.write_queue_is_empty() {
+        midi.write_queue_to_host();
+    }
+
+    match midi.read_to_queue() {
+        Ok(len) if len > 0 => true,
+        _ => false
     }
 }
 

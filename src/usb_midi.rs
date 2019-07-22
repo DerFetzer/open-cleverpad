@@ -64,19 +64,18 @@ impl<'a, B: UsbBus> MidiClass<'a, B> {
         };
 
         let mut message = [0_u8; 4];
-        for i in 0..len/4 {
+        for i in 0..len / 4 {
             message.copy_from_slice(&buf[i * 4..4]);
             match self.read_queue.enqueue(message) {
                 Ok(_) => (),
-                _ => return Err(UsbError::BufferOverflow)
+                _ => return Err(UsbError::BufferOverflow),
             }
-        };
+        }
         Ok(len)
     }
 
     pub fn write_queue_to_host(&mut self) -> usb_device::Result<usize> {
         // TODO: In case of error content of queue is lost. Find better implementation!
-        let queue_length = self.write_queue.len();
         let mut data = [0_u8; 64];
         let mut i = 0;
 

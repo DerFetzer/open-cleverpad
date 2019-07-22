@@ -11,6 +11,7 @@
 #![no_std]
 #![no_main]
 
+#[allow(unused_imports)]
 use panic_semihosting;
 
 use cortex_m_rt::entry;

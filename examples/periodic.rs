@@ -5,7 +5,8 @@
 #![no_main]
 #![no_std]
 
-extern crate panic_semihosting;
+#[allow(unused_imports)]
+use panic_semihosting;
 
 use cortex_m_semihosting::hprintln;
 use rtfm::Instant;

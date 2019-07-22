@@ -16,6 +16,8 @@ use stm32f1xx_hal::qei::Qei;
 pub struct ButtonMatrix {
     pins: ButtonMatrixPins,
     rows: [u8; 11],
+    rows_neg1: [u8; 11],
+    rows_neg2: [u8; 11],
     delay: AsmDelay,
 }
 
@@ -24,15 +26,38 @@ impl ButtonMatrix {
         ButtonMatrix {
             pins,
             rows: [0; 11],
+            rows_neg1: [0; 11],
+            rows_neg2: [0; 11],
             delay,
         }
+    }
+
+    pub fn get_row(self, row_num: usize) -> u8 {
+        self.rows[row_num]
     }
 
     pub fn get_rows(self) -> [u8; 11] {
         self.rows
     }
 
+    pub fn get_debounced_row(self, row_num: usize) -> u8 {
+        self.rows_neg2[row_num] & self.rows_neg1[row_num] & self.rows[row_num]
+    }
+
+    pub fn get_debounced_rows(self) -> [u8; 11] {
+        let mut debounced_rows = [0_u8; 11];
+
+        for i in 0..11 {
+            debounced_rows[i] = self.rows_neg2[i] & self.rows_neg1[i] & self.rows[i]
+        }
+
+        debounced_rows
+    }
+
     pub fn read(&mut self) {
+        self.rows_neg2.copy_from_slice(&self.rows_neg1);
+        self.rows_neg1.copy_from_slice(&self.rows);
+
         for i in 0..11 {
             match i {
                 0 => self.pins.col1.set_low(),
@@ -105,7 +130,7 @@ pub struct ButtonMatrixPins {
 pub struct Encoders {
     qei: Qei<TIM2, (PA0<Input<Floating>>, PA1<Input<Floating>>)>,
     pins: EncoderPins,
-    positions: [i16; 8],
+    positions: [i32; 8],
     current_encoder: usize,
     last_count: u16,
 }
@@ -124,7 +149,7 @@ impl Encoders {
         }
     }
 
-    pub fn get_positions(self) -> [i16; 8] {
+    pub fn get_positions(self) -> [i32; 8] {
         self.positions
     }
 
@@ -133,7 +158,7 @@ impl Encoders {
         let last_count = self.last_count;
         let diff = current_count.wrapping_sub(last_count) as i16;
 
-        self.positions[self.current_encoder] += diff;
+        self.positions[self.current_encoder] += diff as i32;
 
         self.current_encoder += 1;
         if self.current_encoder == 8 {

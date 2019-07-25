@@ -65,7 +65,7 @@ impl<'a, B: UsbBus> MidiClass<'a, B> {
 
         let mut message = [0_u8; 4];
         for i in 0..len / 4 {
-            message.copy_from_slice(&buf[i * 4..4]);
+            message.copy_from_slice(&buf[i * 4..(i * 4) + 4]);
             match self.read_queue.enqueue(message) {
                 Ok(_) => (),
                 _ => return Err(UsbError::BufferOverflow),
@@ -80,7 +80,7 @@ impl<'a, B: UsbBus> MidiClass<'a, B> {
         let mut i = 0;
 
         while !self.write_queue_is_empty() {
-            &data[i * 4..4].copy_from_slice(&self.write_queue.dequeue().unwrap()[..]);
+            &data[i * 4..(i * 4) + 4].copy_from_slice(&self.write_queue.dequeue().unwrap()[..]);
             i += 1;
         }
 

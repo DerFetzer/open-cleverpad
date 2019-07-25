@@ -4,7 +4,7 @@ pub enum ButtonType {
     Master(u8),
     Arrow(Direction),
     Mode(ModeType),
-    Parameter(ParameterType)
+    Parameter(ParameterType),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -12,18 +12,18 @@ pub enum Direction {
     Up,
     Down,
     Left,
-    Right
+    Right,
 }
 
-#[derive(Clone, Copy,  Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum ModeType {
     Clip,
     One,
     Two,
-    Set
+    Set,
 }
 
-#[derive(Clone, Copy,  Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum ParameterType {
     Volume,
     SendA,
@@ -32,19 +32,19 @@ pub enum ParameterType {
     Control1,
     Control2,
     Control3,
-    Control4
+    Control4,
 }
 
 #[derive(Debug)]
 pub enum ButtonEventEdge {
     PosEdge,
-    NegEdge
+    NegEdge,
 }
 
 #[derive(Debug)]
 pub struct ButtonEvent {
     btn: ButtonType,
-    event: ButtonEventEdge
+    event: ButtonEventEdge,
 }
 
 static PARAMETER_TYPES: [ParameterType; 8] = [
@@ -65,12 +65,7 @@ static DIRECTION_TYPES: [Direction; 4] = [
     Direction::Right,
 ];
 
-static MODE_TYPES: [ModeType; 4] = [
-    ModeType::Clip,
-    ModeType::One,
-    ModeType::Two,
-    ModeType::Set,
-];
+static MODE_TYPES: [ModeType; 4] = [ModeType::Clip, ModeType::One, ModeType::Two, ModeType::Set];
 
 impl ButtonEvent {
     pub fn new(row: u8, col: u8, event: ButtonEventEdge) -> ButtonEvent {
@@ -81,20 +76,14 @@ impl ButtonEvent {
 
                 ButtonType::Pad { x, y }
             }
-            8 => {
-                ButtonType::Master(row + 1)
-            }
-            9 => {
-                match row {
-                    0..=3 => ButtonType::Arrow(DIRECTION_TYPES[row as usize]),
-                    4..=7 => ButtonType::Mode(MODE_TYPES[row as usize - 4]),
-                    _ => panic!("This should never happen!")
-                }
-            }
-            10 => {
-                ButtonType::Parameter(PARAMETER_TYPES[row as usize])
-            }
-            _ => panic!("This should never happen!")
+            8 => ButtonType::Master(row + 1),
+            9 => match row {
+                0..=3 => ButtonType::Arrow(DIRECTION_TYPES[row as usize]),
+                4..=7 => ButtonType::Mode(MODE_TYPES[row as usize - 4]),
+                _ => panic!("This should never happen!"),
+            },
+            10 => ButtonType::Parameter(PARAMETER_TYPES[row as usize]),
+            _ => panic!("This should never happen!"),
         };
 
         ButtonEvent { btn, event }

@@ -128,24 +128,37 @@ pub struct ButtonMatrixPins {
 }
 
 pub struct Encoders {
-    qei: Qei<TIM2, (PA0<Input<Floating>>, PA1<Input<Floating>>)>,
     pins: EncoderPins,
     positions: [i32; 8],
-    current_encoder: usize,
-    last_count: u16,
+    a_state: u8,
+    a: u8,
+    a_neg1: u8,
+    a_neg2: u8,
+    a_neg3: u8,
+    b_state: u8,
+    b: u8,
+    b_neg1: u8,
+    b_neg2: u8,
+    b_neg3: u8,
+    delay: AsmDelay,
 }
 
 impl Encoders {
-    pub fn new(
-        qei: Qei<TIM2, (PA0<Input<Floating>>, PA1<Input<Floating>>)>,
-        pins: EncoderPins,
-    ) -> Self {
+    pub fn new(pins: EncoderPins, delay: AsmDelay) -> Self {
         Encoders {
-            qei,
             pins,
             positions: [0; 8],
-            current_encoder: 0,
-            last_count: 0,
+            a_state: 0,
+            a: 0,
+            a_neg1: 0,
+            a_neg2: 0,
+            a_neg3: 0,
+            b_state: 0,
+            b: 0,
+            b_neg1: 0,
+            b_neg2: 0,
+            b_neg3: 0,
+            delay,
         }
     }
 
@@ -153,37 +166,101 @@ impl Encoders {
         self.positions
     }
 
-    pub fn next_encoder(&mut self) -> i16 {
-        let current_count = self.qei.count();
-        let last_count = self.last_count;
-        let diff = current_count.wrapping_sub(last_count) as i16;
+    pub fn read(&mut self) -> bool {
+        let mut change = false;
 
-        self.positions[self.current_encoder] += diff as i32;
-        
-        self.current_encoder += 1;
-        if self.current_encoder == 8 {
-            self.current_encoder = 0;
+        self.a_neg3 = self.a_neg2;
+        self.a_neg2 = self.a_neg1;
+        self.a_neg1 = self.a;
+
+        self.b_neg3 = self.b_neg2;
+        self.b_neg2 = self.b_neg1;
+        self.b_neg1 = self.b;
+
+        for i in 0..8 {
+            if i & 1 << 0 == 0 {
+                self.pins.a0.set_low();
+            } else {
+                self.pins.a0.set_high();
+            }
+            if i & 1 << 1 == 0 {
+                self.pins.a1.set_low();
+            } else {
+                self.pins.a1.set_high();
+            }
+            if i & 1 << 2 == 0 {
+                self.pins.a2.set_low();
+            } else {
+                self.pins.a2.set_high();
+            }
+
+            self.delay.delay_us(20_u32);
+
+            if self.pins.a.is_low() {
+                self.a |= 1_u8 << i;
+            } else {
+                self.a &= !(1_u8 << i);
+            }
+
+            if self.pins.b.is_low() {
+                self.b |= 1_u8 << i;
+            } else {
+                self.b &= !(1_u8 << i);
+            }
+
+            let a_stable = match (
+                (self.a & 1 << i) > 0,
+                (self.a_neg1 & 1 << i) > 0,
+                (self.a_neg2 & 1 << i) > 0,
+                (self.a_neg3 & 1 << i) > 0,
+            ) {
+                (false, false, false, false) => Some(false),
+                (true, true, true, true) => Some(true),
+                _ => None,
+            };
+
+            let b_stable = match (
+                (self.b & 1 << i) > 0,
+                (self.b_neg1 & 1 << i) > 0,
+                (self.b_neg2 & 1 << i) > 0,
+                (self.b_neg3 & 1 << i) > 0,
+            ) {
+                (false, false, false, false) => Some(false),
+                (true, true, true, true) => Some(true),
+                _ => None,
+            };
+
+            match (
+                a_stable,
+                b_stable,
+                (self.a_state & 1 << i) > 0,
+                (self.b_state & 1 << i) > 0,
+            ) {
+                (Some(true), Some(true), false, true) => {
+                    change = true;
+                    self.positions[i] += 1;
+                }
+                (Some(true), Some(true), true, false) => {
+                    change = true;
+                    self.positions[i] -= 1;
+                }
+                _ => (),
+            };
+
+            match a_stable {
+                (Some(false)) => self.a_state &= !(1_u8 << i), // a stable false
+                (Some(true)) => self.a_state |= 1_u8 << i,     // a stable true
+                _ => ()
+            };
+
+            match b_stable {
+                (Some(false)) => self.b_state &= !(1_u8 << i),  // b stable false
+                (Some(true)) => self.b_state |= 1_u8 << i,    // b stable true
+                _ => ()
+            };
         }
 
-        if self.current_encoder & 1 << 0 == 0 {
-            self.pins.a0.set_low();
-        } else {
-            self.pins.a0.set_high();
-        }
-        if self.current_encoder & 1 << 1 == 0 {
-            self.pins.a1.set_low();
-        } else {
-            self.pins.a1.set_high();
-        }
-        if self.current_encoder & 1 << 2 == 0 {
-            self.pins.a2.set_low();
-        } else {
-            self.pins.a2.set_high();
-        }
-
-        self.last_count = self.qei.count();
-
-        diff
+        change
     }
 }
 
@@ -191,6 +268,8 @@ pub struct EncoderPins {
     pub a0: PC0<Output<PushPull>>,
     pub a1: PC1<Output<PushPull>>,
     pub a2: PC2<Output<PushPull>>,
+    pub a: PA1<Input<Floating>>,
+    pub b: PA0<Input<Floating>>,
 }
 
 pub struct Leds {

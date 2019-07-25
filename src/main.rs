@@ -7,7 +7,7 @@
 #[allow(unused_imports)]
 use panic_semihosting;
 
-use cortex_m::asm::wfi;
+use cortex_m::asm::{wfi, delay};
 
 use cortex_m_semihosting::hprintln;
 
@@ -28,12 +28,12 @@ use stm32_usbd::{UsbBus, UsbBusType};
 use usb_device::bus;
 use usb_device::prelude::*;
 
+use crate::hal::ButtonEventEdge::{NegEdge, PosEdge};
+use crate::hal::{ButtonEvent, ButtonEventEdge};
 use heapless::consts::*;
-use heapless::spsc::{Producer, Consumer, Queue};
-use crate::hal::{ButtonEventEdge, ButtonEvent};
-use crate::hal::ButtonEventEdge::{PosEdge, NegEdge};
+use heapless::spsc::{Consumer, Producer, Queue};
+use stm32f1xx_hal::gpio::gpioa::{PA10, PA9};
 use stm32f1xx_hal::gpio::{Output, PushPull};
-use stm32f1xx_hal::gpio::gpioa::{PA9, PA10};
 
 mod hal;
 mod hardware;
@@ -57,6 +57,7 @@ const APP: () = {
     static mut ENCODERS: Encoders = ();
     static mut BUTTON_MATRIX: ButtonMatrix = ();
 
+    static mut ENCODER_POSITIONS: [i32; 8] = [0; 8];
     static mut PREV_BUTTON_STATE: [u8; 11] = [0; 11];
 
     static mut USB_DEV: UsbDevice<'static, UsbBusType> = ();
@@ -130,19 +131,13 @@ const APP: () = {
         let enc_out_a = gpioa.pa1;
         let enc_out_b = gpioa.pa0;
 
-        // QEI
-        let qei = Qei::tim2(
-            device.TIM2,
-            (enc_out_b, enc_out_a),
-            &mut afio.mapr,
-            &mut rcc.apb1,
-        );
-
         // QEI does not work because of encoder switching
         let encoder_pins = EncoderPins {
             a0: enc_a0,
             a1: enc_a1,
             a2: enc_a2,
+            a: enc_out_a,
+            b: enc_out_b,
         };
 
         // Declare button matrix GPIOs
@@ -191,12 +186,8 @@ const APP: () = {
         };
 
         // Declare Debug-GPIOs
-        let debug_pa9 = gpioa
-            .pa9
-            .into_push_pull_output(&mut gpioa.crh);
-        let debug_pa10 = gpioa
-            .pa10
-            .into_push_pull_output(&mut gpioa.crh);
+        let debug_pa9 = gpioa.pa9.into_push_pull_output(&mut gpioa.crh);
+        let debug_pa10 = gpioa.pa10.into_push_pull_output(&mut gpioa.crh);
 
         // Queues
         *BUTTON_QUEUE = Some(Queue::new());
@@ -221,6 +212,7 @@ const APP: () = {
             .build();
 
         let button_delay = AsmDelay::new(bitrate::U32BitrateExt::mhz(72));
+        let encoder_delay = AsmDelay::new(bitrate::U32BitrateExt::mhz(72));
 
         schedule
             .led_bank(Instant::now() + (STARTUP_DELAY + LED_BANK_PERIOD).cycles())
@@ -234,7 +226,7 @@ const APP: () = {
 
         init::LateResources {
             LEDS: Leds::new(led_pins),
-            ENCODERS: Encoders::new(qei, encoder_pins),
+            ENCODERS: Encoders::new(encoder_pins, encoder_delay),
             BUTTON_MATRIX: ButtonMatrix::new(button_pins, button_delay),
             USB_DEV: usb_dev,
             MIDI: midi,
@@ -245,15 +237,24 @@ const APP: () = {
         }
     }
 
-    #[idle(resources = [BUTTON_EVENT_C])]
+    #[idle(resources = [BUTTON_EVENT_C, ENCODER_POSITIONS])]
     fn idle() -> ! {
+        let mut encoder_positions = [0_i32; 8];
+
         loop {
             if let Some(e) = resources.BUTTON_EVENT_C.dequeue() {
                 hprintln!("{:?}", e).unwrap();
             }
+            resources.ENCODER_POSITIONS.lock(|&mut p| {
+                if p != encoder_positions {
+                    encoder_positions = p;
+                    hprintln!("{:?}", p).unwrap();
+                }
+            });
+
+            delay(10_000_000);
         }
     }
-
 
     #[task(priority = 3, schedule = [led_bank], resources = [LEDS])]
     fn led_bank() {
@@ -262,15 +263,14 @@ const APP: () = {
         schedule
             .led_bank(scheduled + LED_BANK_PERIOD.cycles())
             .unwrap();
-
     }
 
-    #[task(priority = 3, schedule = [enc], spawn = [activate_debug_leds], resources = [ENCODERS])]
+    #[task(priority = 2, schedule = [enc], spawn = [activate_debug_leds], resources = [ENCODERS, ENCODER_POSITIONS])]
     fn enc() {
-        let diff = resources.ENCODERS.next_encoder();
+        let change = resources.ENCODERS.read();
 
-        if diff != 0 {
-            hprintln!("{:?}", diff).unwrap();
+        if change {
+            *resources.ENCODER_POSITIONS = resources.ENCODERS.get_positions();
         }
 
         schedule.enc(scheduled + ENC_SEL_PERIOD.cycles()).unwrap();
@@ -287,14 +287,19 @@ const APP: () = {
         if deb_rows != *resources.PREV_BUTTON_STATE {
             for col in 0..11 {
                 for row in 0..8 {
-                    let edge = match (((resources.PREV_BUTTON_STATE[col] >> row) & 1), ((deb_rows[col] >> row) & 1)) {
+                    let edge = match (
+                        ((resources.PREV_BUTTON_STATE[col] >> row) & 1),
+                        ((deb_rows[col] >> row) & 1),
+                    ) {
                         (0, 1) => Some(PosEdge),
                         (1, 0) => Some(NegEdge),
-                        _ => None
+                        _ => None,
                     };
 
                     if let Some(e) = edge {
-                        resources.BUTTON_EVENT_P.enqueue(ButtonEvent::new(row, col as u8, e));
+                        resources
+                            .BUTTON_EVENT_P
+                            .enqueue(ButtonEvent::new(row, col as u8, e));
                     }
                 }
             }

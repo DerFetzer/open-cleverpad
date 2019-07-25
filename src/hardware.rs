@@ -32,19 +32,19 @@ impl ButtonMatrix {
         }
     }
 
-    pub fn get_row(self, row_num: usize) -> u8 {
+    pub fn get_row(&mut self, row_num: usize) -> u8 {
         self.rows[row_num]
     }
 
-    pub fn get_rows(self) -> [u8; 11] {
+    pub fn get_rows(&mut self) -> [u8; 11] {
         self.rows
     }
 
-    pub fn get_debounced_row(self, row_num: usize) -> u8 {
+    pub fn get_debounced_row(&mut self, row_num: usize) -> u8 {
         self.rows_neg2[row_num] & self.rows_neg1[row_num] & self.rows[row_num]
     }
 
-    pub fn get_debounced_rows(self) -> [u8; 11] {
+    pub fn get_debounced_rows(&mut self) -> [u8; 11] {
         let mut debounced_rows = [0_u8; 11];
 
         for i in 0..11 {
@@ -73,17 +73,17 @@ impl ButtonMatrix {
                 10 => self.pins.col11.set_low(),
                 _ => panic!("This should never happen"),
             };
-            self.delay.delay_us(1_u32);
+            self.delay.delay_us(10_u32);
 
             let mut row: u8 = 0;
-            row |= (self.pins.row1.is_high() as u8) << 0;
-            row |= (self.pins.row2.is_high() as u8) << 1;
-            row |= (self.pins.row3.is_high() as u8) << 2;
-            row |= (self.pins.row4.is_high() as u8) << 3;
-            row |= (self.pins.row5.is_high() as u8) << 4;
-            row |= (self.pins.row6.is_high() as u8) << 5;
-            row |= (self.pins.row7.is_high() as u8) << 6;
-            row |= (self.pins.row8.is_high() as u8) << 7;
+            row |= (self.pins.row1.is_low() as u8) << 0;
+            row |= (self.pins.row2.is_low() as u8) << 1;
+            row |= (self.pins.row3.is_low() as u8) << 2;
+            row |= (self.pins.row4.is_low() as u8) << 3;
+            row |= (self.pins.row5.is_low() as u8) << 4;
+            row |= (self.pins.row6.is_low() as u8) << 5;
+            row |= (self.pins.row7.is_low() as u8) << 6;
+            row |= (self.pins.row8.is_low() as u8) << 7;
 
             self.rows[i] = row;
 
@@ -149,17 +149,17 @@ impl Encoders {
         }
     }
 
-    pub fn get_positions(self) -> [i32; 8] {
+    pub fn get_positions(&mut self) -> [i32; 8] {
         self.positions
     }
 
-    pub fn next_encoder(&mut self) -> bool {
+    pub fn next_encoder(&mut self) -> i16 {
         let current_count = self.qei.count();
         let last_count = self.last_count;
         let diff = current_count.wrapping_sub(last_count) as i16;
 
         self.positions[self.current_encoder] += diff as i32;
-
+        
         self.current_encoder += 1;
         if self.current_encoder == 8 {
             self.current_encoder = 0;
@@ -183,7 +183,7 @@ impl Encoders {
 
         self.last_count = self.qei.count();
 
-        diff != 0
+        diff
     }
 }
 
@@ -208,7 +208,7 @@ impl Leds {
         }
     }
 
-    pub fn get_bank_value(&self, bank: usize) -> u32 {
+    pub fn get_bank_value(&mut self, bank: usize) -> u32 {
         self.banks[bank]
     }
 

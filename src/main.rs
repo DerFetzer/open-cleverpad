@@ -22,29 +22,31 @@ use stm32f1xx_hal::qei::Qei;
 
 use crate::hardware::{ButtonMatrix, ButtonMatrixPins, EncoderPins, Encoders, LedPins, Leds};
 use crate::midi::{MidiMessage, NoteOn};
+
 use stm32_usbd::{UsbBus, UsbBusType};
+
 use usb_device::bus;
 use usb_device::prelude::*;
 
+use heapless::consts::*;
+use heapless::spsc::{Producer, Consumer, Queue};
+use crate::hal::{ButtonEventEdge, ButtonEvent};
+use crate::hal::ButtonEventEdge::{PosEdge, NegEdge};
+use stm32f1xx_hal::gpio::{Output, PushPull};
+use stm32f1xx_hal::gpio::gpioa::{PA9, PA10};
+
+mod hal;
 mod hardware;
 mod midi;
 mod usb_midi;
 
 // SYSCLK = 72MHz --> clock_period = 13.9ns
 
-#[cfg(debug_assertions)]
-const LED_BANK_PERIOD: u32 = 700_000; // ~.1kHz
-#[cfg(debug_assertions)]
+const LED_BANK_PERIOD: u32 = 70_000; // ~1kHz
 const ENC_SEL_PERIOD: u32 = 70_000; // ~1kHz
-#[cfg(debug_assertions)]
 const BUTTON_COL_PERIOD: u32 = 700_000; // ~.1kHz
 
-#[cfg(not(debug_assertions))]
-const LED_BANK_PERIOD: u32 = 70_000; // ~1kHz
-#[cfg(not(debug_assertions))]
-const ENC_SEL_PERIOD: u32 = 70_000; // ~1kHz
-#[cfg(not(debug_assertions))]
-const BUTTON_COL_PERIOD: u32 = 700_000; // ~.1kHz
+const STARTUP_DELAY: u32 = 70_000_000; // ~1Hz
 
 const VID: u16 = 0x1122;
 const PID: u16 = 0x3344;
@@ -55,12 +57,21 @@ const APP: () = {
     static mut ENCODERS: Encoders = ();
     static mut BUTTON_MATRIX: ButtonMatrix = ();
 
+    static mut PREV_BUTTON_STATE: [u8; 11] = [0; 11];
+
     static mut USB_DEV: UsbDevice<'static, UsbBusType> = ();
     static mut MIDI: usb_midi::MidiClass<'static, UsbBusType> = ();
+
+    static mut BUTTON_EVENT_P: Producer<'static, ButtonEvent, U4> = ();
+    static mut BUTTON_EVENT_C: Consumer<'static, ButtonEvent, U4> = ();
+
+    static mut DEBUG_PIN_PA9: PA9<Output<PushPull>> = ();
+    static mut DEBUG_PIN_PA10: PA10<Output<PushPull>> = ();
 
     #[init(schedule = [led_bank, enc, button])]
     fn init() -> init::LateResources {
         static mut USB_BUS: Option<bus::UsbBusAllocator<UsbBusType>> = None;
+        static mut BUTTON_QUEUE: Option<Queue<ButtonEvent, U4>> = None;
 
         // Take ownership over the raw flash and rcc devices and convert them into the corresponding
         // HAL structs
@@ -179,6 +190,18 @@ const APP: () = {
                 .into_open_drain_output_with_state(&mut gpiob.crh, High),
         };
 
+        // Declare Debug-GPIOs
+        let debug_pa9 = gpioa
+            .pa9
+            .into_push_pull_output(&mut gpioa.crh);
+        let debug_pa10 = gpioa
+            .pa10
+            .into_push_pull_output(&mut gpioa.crh);
+
+        // Queues
+        *BUTTON_QUEUE = Some(Queue::new());
+        let (button_event_p, button_event_c) = BUTTON_QUEUE.as_mut().unwrap().split();
+
         // USB
         let _usb_pullup = gpioa
             .pa8
@@ -197,17 +220,17 @@ const APP: () = {
             .serial_number("12345678")
             .build();
 
-        schedule
-            .led_bank(Instant::now() + LED_BANK_PERIOD.cycles())
-            .unwrap();
-        schedule
-            .enc(Instant::now() + ENC_SEL_PERIOD.cycles())
-            .unwrap();
-        schedule
-            .button(Instant::now() + BUTTON_COL_PERIOD.cycles())
-            .unwrap();
-
         let button_delay = AsmDelay::new(bitrate::U32BitrateExt::mhz(72));
+
+        schedule
+            .led_bank(Instant::now() + (STARTUP_DELAY + LED_BANK_PERIOD).cycles())
+            .unwrap();
+        schedule
+            .enc(Instant::now() + (STARTUP_DELAY + ENC_SEL_PERIOD).cycles())
+            .unwrap();
+        schedule
+            .button(Instant::now() + (STARTUP_DELAY + BUTTON_COL_PERIOD).cycles())
+            .unwrap();
 
         init::LateResources {
             LEDS: Leds::new(led_pins),
@@ -215,15 +238,22 @@ const APP: () = {
             BUTTON_MATRIX: ButtonMatrix::new(button_pins, button_delay),
             USB_DEV: usb_dev,
             MIDI: midi,
+            BUTTON_EVENT_P: button_event_p,
+            BUTTON_EVENT_C: button_event_c,
+            DEBUG_PIN_PA9: debug_pa9,
+            DEBUG_PIN_PA10: debug_pa10,
         }
     }
 
-    #[idle]
+    #[idle(resources = [BUTTON_EVENT_C])]
     fn idle() -> ! {
         loop {
-            wfi();
+            if let Some(e) = resources.BUTTON_EVENT_C.dequeue() {
+                hprintln!("{:?}", e).unwrap();
+            }
         }
     }
+
 
     #[task(priority = 3, schedule = [led_bank], resources = [LEDS])]
     fn led_bank() {
@@ -232,24 +262,51 @@ const APP: () = {
         schedule
             .led_bank(scheduled + LED_BANK_PERIOD.cycles())
             .unwrap();
+
     }
 
     #[task(priority = 3, schedule = [enc], spawn = [activate_debug_leds], resources = [ENCODERS])]
     fn enc() {
-        if resources.ENCODERS.next_encoder() {
-            spawn.activate_debug_leds();
+        let diff = resources.ENCODERS.next_encoder();
+
+        if diff != 0 {
+            hprintln!("{:?}", diff).unwrap();
         }
 
         schedule.enc(scheduled + ENC_SEL_PERIOD.cycles()).unwrap();
     }
 
-    #[task(priority = 2, schedule = [button], resources = [BUTTON_MATRIX])]
+    #[task(priority = 2, schedule = [button], resources = [BUTTON_MATRIX, PREV_BUTTON_STATE, BUTTON_EVENT_P, DEBUG_PIN_PA9])]
     fn button() {
+        resources.DEBUG_PIN_PA9.set_high();
+
         resources.BUTTON_MATRIX.read();
+
+        let deb_rows = resources.BUTTON_MATRIX.get_debounced_rows();
+
+        if deb_rows != *resources.PREV_BUTTON_STATE {
+            for col in 0..11 {
+                for row in 0..8 {
+                    let edge = match (((resources.PREV_BUTTON_STATE[col] >> row) & 1), ((deb_rows[col] >> row) & 1)) {
+                        (0, 1) => Some(PosEdge),
+                        (1, 0) => Some(NegEdge),
+                        _ => None
+                    };
+
+                    if let Some(e) = edge {
+                        resources.BUTTON_EVENT_P.enqueue(ButtonEvent::new(row, col as u8, e));
+                    }
+                }
+            }
+
+            *resources.PREV_BUTTON_STATE = deb_rows;
+        }
 
         schedule
             .button(scheduled + BUTTON_COL_PERIOD.cycles())
             .unwrap();
+
+        resources.DEBUG_PIN_PA9.set_low();
     }
 
     #[task(resources = [LEDS, MIDI])]
@@ -260,7 +317,7 @@ const APP: () = {
             match m.dequeue() {
                 Some(message) => {
                     if let Some(note_on) = NoteOn::from_bytes(message) {
-                        hprintln!("{:?}", note_on).unwrap()
+                        //hprintln!("{:?}", note_on).unwrap()
                     }
                 }
                 _ => (),

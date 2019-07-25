@@ -80,7 +80,7 @@ impl<'a, B: UsbBus> MidiClass<'a, B> {
         let mut i = 0;
 
         while !self.write_queue_is_empty() {
-            &data[i..4].copy_from_slice(&self.write_queue.dequeue().unwrap()[..]);
+            &data[i * 4..4].copy_from_slice(&self.write_queue.dequeue().unwrap()[..]);
             i += 1;
         }
 

@@ -7,7 +7,7 @@
 #[allow(unused_imports)]
 use panic_semihosting;
 
-use cortex_m::asm::{wfi, delay};
+use cortex_m::asm::{delay, wfi};
 
 use cortex_m_semihosting::hprintln;
 
@@ -29,7 +29,7 @@ use usb_device::bus;
 use usb_device::prelude::*;
 
 use crate::hal::ButtonEventEdge::{NegEdge, PosEdge};
-use crate::hal::{ButtonEvent, ButtonEventEdge};
+use crate::hal::{ButtonEvent, ButtonEventEdge, ButtonType, LedEvent, LedEventType};
 use heapless::consts::*;
 use heapless::spsc::{Consumer, Producer, Queue};
 use stm32f1xx_hal::gpio::gpioa::{PA10, PA9};
@@ -141,6 +141,10 @@ const APP: () = {
         };
 
         // Declare button matrix GPIOs
+
+        // Disable JTAG ports
+        afio.mapr.disable_jtag();
+
         let button_pins = ButtonMatrixPins {
             row1: gpioc.pc8,
             row2: gpioc.pc9,
@@ -237,13 +241,33 @@ const APP: () = {
         }
     }
 
-    #[idle(resources = [BUTTON_EVENT_C, ENCODER_POSITIONS])]
+    #[idle(resources = [BUTTON_EVENT_C, ENCODER_POSITIONS, LEDS])]
     fn idle() -> ! {
         let mut encoder_positions = [0_i32; 8];
 
         loop {
             if let Some(e) = resources.BUTTON_EVENT_C.dequeue() {
-                hprintln!("{:?}", e).unwrap();
+                //hprintln!("{:?}", e).unwrap();
+                let on = match e.event {
+                    ButtonEventEdge::NegEdge => false,
+                    ButtonEventEdge::PosEdge => true,
+                };
+                let led_event = match e.btn {
+                    ButtonType::Pad { x: _, y: _ } => LedEvent::new(
+                        e.btn,
+                        LedEventType::SwitchColor {
+                            r: on,
+                            g: on,
+                            b: on,
+                        },
+                    ),
+                    b => LedEvent::new(e.btn, LedEventType::Switch(on)),
+                };
+                resources.LEDS.lock(|l| {
+                    let banks = l.get_banks();
+                    l.set_banks(led_event.apply_to_banks(banks));
+                });
+                //hprintln!("{:?}", e).unwrap();
             }
             resources.ENCODER_POSITIONS.lock(|&mut p| {
                 if p != encoder_positions {
@@ -251,8 +275,6 @@ const APP: () = {
                     hprintln!("{:?}", p).unwrap();
                 }
             });
-
-            delay(10_000_000);
         }
     }
 

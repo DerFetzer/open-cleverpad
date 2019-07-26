@@ -1,4 +1,4 @@
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum ButtonType {
     Pad { x: u8, y: u8 },
     Master(u8),
@@ -9,7 +9,7 @@ pub enum ButtonType {
 
 #[derive(Clone, Copy, Debug)]
 pub enum Direction {
-    Up,
+    Up = 0,
     Down,
     Left,
     Right,
@@ -17,7 +17,7 @@ pub enum Direction {
 
 #[derive(Clone, Copy, Debug)]
 pub enum ModeType {
-    Clip,
+    Clip = 0,
     One,
     Two,
     Set,
@@ -25,7 +25,7 @@ pub enum ModeType {
 
 #[derive(Clone, Copy, Debug)]
 pub enum ParameterType {
-    Volume,
+    Volume = 0,
     SendA,
     SendB,
     Pan,
@@ -35,16 +35,16 @@ pub enum ParameterType {
     Control4,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum ButtonEventEdge {
     PosEdge,
     NegEdge,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct ButtonEvent {
-    btn: ButtonType,
-    event: ButtonEventEdge,
+    pub btn: ButtonType,
+    pub event: ButtonEventEdge,
 }
 
 static PARAMETER_TYPES: [ParameterType; 8] = [
@@ -87,5 +87,95 @@ impl ButtonEvent {
         };
 
         ButtonEvent { btn, event }
+    }
+}
+
+pub struct LedEvent {
+    btn: ButtonType,
+    event: LedEventType,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum LedEventType {
+    Switch(bool),
+    SwitchColor { r: bool, g: bool, b: bool },
+}
+
+impl LedEvent {
+    pub fn new(btn: ButtonType, event: LedEventType) -> LedEvent {
+        LedEvent { btn, event }
+    }
+
+    pub fn apply_to_banks(&self, banks: [u32; 8]) -> [u32; 8] {
+        let mut new_banks = banks;
+
+        match (self.event, self.btn) {
+            (LedEventType::Switch(s), ButtonType::Master(i)) => {
+                let bank = 7;
+                let bit = 32 - i;
+
+                if s {
+                    new_banks[bank] |= 1 << bit;
+                } else {
+                    new_banks[bank] &= !(1 << bit);
+                }
+            }
+            (LedEventType::Switch(s), ButtonType::Arrow(d)) => {
+                let bank = 6;
+                let bit = 31 - d as u8;
+
+                if s {
+                    new_banks[bank] |= 1 << bit;
+                } else {
+                    new_banks[bank] &= !(1 << bit);
+                }
+            }
+            (LedEventType::Switch(s), ButtonType::Mode(m)) => {
+                let bank = 6;
+                let bit = 27 - m as u8;
+
+                if s {
+                    new_banks[bank] |= 1 << bit;
+                } else {
+                    new_banks[bank] &= !(1 << bit);
+                }
+            }
+            (LedEventType::Switch(s), ButtonType::Parameter(p)) => {
+                let bank = 6;
+                let bit = 23 - p as u8;
+
+                if s {
+                    new_banks[bank] |= 1 << bit;
+                } else {
+                    new_banks[bank] &= !(1 << bit);
+                }
+            }
+            (LedEventType::SwitchColor { r, g, b }, ButtonType::Pad { x, y }) => {
+                let (bank_r, bank_g, bank_b) = if y < 4 { (1, 2, 0) } else { (4, 5, 3) };
+
+                let bit = 31 - (((y % 4) * 8) + x);
+
+                if r {
+                    new_banks[bank_r] |= 1 << bit;
+                } else {
+                    new_banks[bank_r] &= !(1 << bit);
+                }
+
+                if g {
+                    new_banks[bank_g] |= 1 << bit;
+                } else {
+                    new_banks[bank_g] &= !(1 << bit);
+                }
+
+                if b {
+                    new_banks[bank_b] |= 1 << bit;
+                } else {
+                    new_banks[bank_b] &= !(1 << bit);
+                }
+            }
+            _ => panic!("Invalid LED and button types!"),
+        };
+
+        new_banks
     }
 }

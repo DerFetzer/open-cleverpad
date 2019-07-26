@@ -250,13 +250,13 @@ impl Encoders {
             match a_stable {
                 (Some(false)) => self.a_state &= !(1_u8 << i), // a stable false
                 (Some(true)) => self.a_state |= 1_u8 << i,     // a stable true
-                _ => ()
+                _ => (),
             };
 
             match b_stable {
-                (Some(false)) => self.b_state &= !(1_u8 << i),  // b stable false
-                (Some(true)) => self.b_state |= 1_u8 << i,    // b stable true
-                _ => ()
+                (Some(false)) => self.b_state &= !(1_u8 << i), // b stable false
+                (Some(true)) => self.b_state |= 1_u8 << i,     // b stable true
+                _ => (),
             };
         }
 
@@ -287,8 +287,16 @@ impl Leds {
         }
     }
 
+    pub fn get_banks(&mut self) -> [u32; 8] {
+        self.banks
+    }
+
     pub fn get_bank_value(&mut self, bank: usize) -> u32 {
         self.banks[bank]
+    }
+
+    pub fn set_banks(&mut self, banks: [u32; 8]) {
+        self.banks = banks;
     }
 
     pub fn set_bank_value(&mut self, bank: usize, value: u32) {

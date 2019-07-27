@@ -7,9 +7,9 @@ pub trait MidiMessage {
 
 #[derive(Debug)]
 pub struct NoteOn {
-    channel: u8,
-    note: u8,
-    velocity: u8,
+    pub channel: u8,
+    pub note: u8,
+    pub velocity: u8,
 }
 
 impl NoteOn {
@@ -42,8 +42,8 @@ impl MidiMessage for NoteOn {
 }
 
 pub struct NoteOff {
-    channel: u8,
-    note: u8,
+    pub channel: u8,
+    pub note: u8,
 }
 
 impl NoteOff {
@@ -70,9 +70,9 @@ impl MidiMessage for NoteOff {
 }
 
 pub struct ControlChange {
-    channel: u8,
-    controller: u8,
-    value: u8,
+    pub channel: u8,
+    pub controller: u8,
+    pub value: u8,
 }
 
 impl ControlChange {

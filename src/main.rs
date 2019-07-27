@@ -21,7 +21,7 @@ use stm32f1xx_hal::prelude::*;
 use stm32f1xx_hal::qei::Qei;
 
 use crate::hardware::{ButtonMatrix, ButtonMatrixPins, EncoderPins, Encoders, LedPins, Leds};
-use crate::midi::{MidiMessage, NoteOn};
+use crate::midi::{MidiMessage, NoteOn, NoteOff};
 
 use stm32_usbd::{UsbBus, UsbBusType};
 
@@ -241,13 +241,13 @@ const APP: () = {
         }
     }
 
-    #[idle(resources = [BUTTON_EVENT_C, ENCODER_POSITIONS, LEDS])]
+    #[idle(resources = [BUTTON_EVENT_C, ENCODER_POSITIONS, LEDS, MIDI])]
     fn idle() -> ! {
         let mut encoder_positions = [0_i32; 8];
 
         loop {
+            // Handle button events
             if let Some(e) = resources.BUTTON_EVENT_C.dequeue() {
-                //hprintln!("{:?}", e).unwrap();
                 let on = match e.event {
                     ButtonEventEdge::NegEdge => false,
                     ButtonEventEdge::PosEdge => true,
@@ -256,8 +256,8 @@ const APP: () = {
                     ButtonType::Pad { x: _, y: _ } => LedEvent::new(
                         e.btn,
                         LedEventType::SwitchColor {
-                            r: on,
-                            g: on,
+                            r: false,
+                            g: false,
                             b: on,
                         },
                     ),
@@ -267,14 +267,81 @@ const APP: () = {
                     let banks = l.get_banks();
                     l.set_banks(led_event.apply_to_banks(banks));
                 });
-                //hprintln!("{:?}", e).unwrap();
             }
+
+            // Handle encoder changes
             resources.ENCODER_POSITIONS.lock(|&mut p| {
                 if p != encoder_positions {
                     encoder_positions = p;
-                    hprintln!("{:?}", p).unwrap();
                 }
             });
+
+            /*let bank = match encoder_positions[0] {
+                0...5 => 0,
+                5...10 => 1,
+                10...15 => 2,
+                15...20 => 3,
+                _ => 0xFF
+            };
+
+            resources.LEDS.lock(|l| {
+                l.set_bank_value(0, bank)
+            });*/
+
+            // Handle MIDI messages
+            let mut message = None;
+
+            resources.MIDI.lock(|m| {
+                message = m.dequeue();
+            });
+
+            if let Some(b) = message {
+                let mut led_event = None;
+
+                if let Some(note_on) = NoteOn::from_bytes(b) {
+                    //hprintln!("On {}", note_on.velocity).unwrap();
+
+                    let x = note_on.note % 8;
+                    let y = note_on.note / 8;
+
+                    let btn = ButtonType::Pad { x, y };
+
+                    let (r, g, b) = match note_on.velocity {
+                        0 => (false, false, false),
+                        1...15 => (false, false, true),
+                        15...30 => (false, true, false),
+                        30...45 => (false, true, true),
+                        45...60 => (true, false, false),
+                        60...75 => (true, false, true),
+                        75...90 => (true, true, false),
+                        _ => (true, true, true),
+                    };
+
+                    if x < 8 && y < 8 {
+                        led_event = Some(LedEvent::new(btn, LedEventType::SwitchColor { r, g, b }))
+                    }
+                };
+
+                if let Some(note_off) = NoteOff::from_bytes(b) {
+                    //hprintln!("Off").unwrap();
+
+                    let x = note_off.note % 8;
+                    let y = note_off.note / 8;
+
+                    let btn = ButtonType::Pad { x, y };
+
+                    if x < 8 && y < 8 {
+                        led_event = Some(LedEvent::new(btn, LedEventType::SwitchColor { r: false, g: false, b: false }));
+                    }
+                };
+
+                if let Some(le) = led_event {
+                    resources.LEDS.lock(|l| {
+                        let banks = l.get_banks();
+                        l.set_banks(le.apply_to_banks(banks));
+                    });
+                }
+            }
         }
     }
 
@@ -358,14 +425,14 @@ const APP: () = {
     #[interrupt(resources = [USB_DEV, MIDI], spawn = [activate_debug_leds])]
     fn USB_HP_CAN_TX() {
         if usb_poll(&mut resources.USB_DEV, &mut resources.MIDI) {
-            spawn.activate_debug_leds();
+            //spawn.activate_debug_leds();
         };
     }
 
     #[interrupt(resources = [USB_DEV, MIDI], spawn = [activate_debug_leds])]
     fn USB_LP_CAN_RX0() {
         if usb_poll(&mut resources.USB_DEV, &mut resources.MIDI) {
-            spawn.activate_debug_leds();
+            //spawn.activate_debug_leds();
         };
     }
 

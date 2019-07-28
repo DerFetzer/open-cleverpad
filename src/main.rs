@@ -15,13 +15,15 @@ use rtfm::Instant;
 
 use asm_delay::AsmDelay;
 
+use stm32f1xx_hal::gpio::gpioa::{PA10, PA9};
 use stm32f1xx_hal::gpio::State::High;
-
+use stm32f1xx_hal::gpio::{Output, PushPull};
+use stm32f1xx_hal::pac;
 use stm32f1xx_hal::prelude::*;
 use stm32f1xx_hal::qei::Qei;
 
 use crate::hardware::{ButtonMatrix, ButtonMatrixPins, EncoderPins, Encoders, LedPins, Leds};
-use crate::midi::{MidiMessage, NoteOn, NoteOff};
+use crate::midi::{MidiMessage, NoteOff, NoteOn};
 
 use stm32_usbd::{UsbBus, UsbBusType};
 
@@ -32,8 +34,6 @@ use crate::hal::ButtonEventEdge::{NegEdge, PosEdge};
 use crate::hal::{ButtonEvent, ButtonEventEdge, ButtonType, LedEvent, LedEventType};
 use heapless::consts::*;
 use heapless::spsc::{Consumer, Producer, Queue};
-use stm32f1xx_hal::gpio::gpioa::{PA10, PA9};
-use stm32f1xx_hal::gpio::{Output, PushPull};
 
 mod hal;
 mod hardware;
@@ -252,21 +252,24 @@ const APP: () = {
                     ButtonEventEdge::NegEdge => false,
                     ButtonEventEdge::PosEdge => true,
                 };
-                let led_event = match e.btn {
-                    ButtonType::Pad { x: _, y: _ } => LedEvent::new(
-                        e.btn,
-                        LedEventType::SwitchColor {
-                            r: false,
-                            g: false,
-                            b: on,
-                        },
-                    ),
-                    b => LedEvent::new(e.btn, LedEventType::Switch(on)),
+                match e.btn {
+                    ButtonType::Pad { x, y } => {
+                        let midi = match on {
+                            true => NoteOn::new(0, y * 8 + x, 127).unwrap().to_bytes(),
+                            false => NoteOff::new(0, y * 8 + x).unwrap().to_bytes(),
+                        };
+                        resources.MIDI.lock(|m| m.enqueue(midi));
+                        rtfm::pend(pac::Interrupt::USB_LP_CAN_RX0);
+                    }
+                    b => {
+                        let led_event = LedEvent::new(e.btn, LedEventType::Switch(on));
+
+                        resources.LEDS.lock(|l| {
+                            let banks = l.get_banks();
+                            l.set_banks(led_event.apply_to_banks(banks));
+                        });
+                    }
                 };
-                resources.LEDS.lock(|l| {
-                    let banks = l.get_banks();
-                    l.set_banks(led_event.apply_to_banks(banks));
-                });
             }
 
             // Handle encoder changes
@@ -331,7 +334,14 @@ const APP: () = {
                     let btn = ButtonType::Pad { x, y };
 
                     if x < 8 && y < 8 {
-                        led_event = Some(LedEvent::new(btn, LedEventType::SwitchColor { r: false, g: false, b: false }));
+                        led_event = Some(LedEvent::new(
+                            btn,
+                            LedEventType::SwitchColor {
+                                r: false,
+                                g: false,
+                                b: false,
+                            },
+                        ));
                     }
                 };
 
@@ -447,12 +457,12 @@ fn usb_poll<B: bus::UsbBus>(
     usb_dev: &mut UsbDevice<'static, B>,
     midi: &mut usb_midi::MidiClass<'static, B>,
 ) -> bool {
-    if !usb_dev.poll(&mut [midi]) {
-        return false;
-    }
-
     if !midi.write_queue_is_empty() {
         midi.write_queue_to_host();
+    }
+
+    if !usb_dev.poll(&mut [midi]) {
+        return false;
     }
 
     match midi.read_to_queue() {

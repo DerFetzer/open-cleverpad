@@ -134,12 +134,12 @@ pub struct Encoders {
     a: u8,
     a_neg1: u8,
     a_neg2: u8,
-    a_neg3: u8,
+    //a_neg3: u8,
     b_state: u8,
     b: u8,
     b_neg1: u8,
     b_neg2: u8,
-    b_neg3: u8,
+    //b_neg3: u8,
     delay: AsmDelay,
 }
 
@@ -152,12 +152,12 @@ impl Encoders {
             a: 0,
             a_neg1: 0,
             a_neg2: 0,
-            a_neg3: 0,
+            //a_neg3: 0,
             b_state: 0,
             b: 0,
             b_neg1: 0,
             b_neg2: 0,
-            b_neg3: 0,
+            //b_neg3: 0,
             delay,
         }
     }
@@ -169,11 +169,11 @@ impl Encoders {
     pub fn read(&mut self) -> bool {
         let mut change = false;
 
-        self.a_neg3 = self.a_neg2;
+        //self.a_neg3 = self.a_neg2;
         self.a_neg2 = self.a_neg1;
         self.a_neg1 = self.a;
 
-        self.b_neg3 = self.b_neg2;
+        //self.b_neg3 = self.b_neg2;
         self.b_neg2 = self.b_neg1;
         self.b_neg1 = self.b;
 
@@ -194,7 +194,7 @@ impl Encoders {
                 self.pins.a2.set_high();
             }
 
-            self.delay.delay_us(20_u32);
+            self.delay.delay_us(5_u32);
 
             if self.pins.a.is_low() {
                 self.a |= 1_u8 << i;
@@ -212,10 +212,10 @@ impl Encoders {
                 (self.a & 1 << i) > 0,
                 (self.a_neg1 & 1 << i) > 0,
                 (self.a_neg2 & 1 << i) > 0,
-                (self.a_neg3 & 1 << i) > 0,
+                //(self.a_neg3 & 1 << i) > 0,
             ) {
-                (false, false, false, false) => Some(false),
-                (true, true, true, true) => Some(true),
+                (false, false, false /*, false*/) => Some(false),
+                (true, true, true /*, true*/) => Some(true),
                 _ => None,
             };
 
@@ -223,10 +223,10 @@ impl Encoders {
                 (self.b & 1 << i) > 0,
                 (self.b_neg1 & 1 << i) > 0,
                 (self.b_neg2 & 1 << i) > 0,
-                (self.b_neg3 & 1 << i) > 0,
+                //(self.b_neg3 & 1 << i) > 0,
             ) {
-                (false, false, false, false) => Some(false),
-                (true, true, true, true) => Some(true),
+                (false, false, false /*, false*/) => Some(false),
+                (true, true, true /*, true*/) => Some(true),
                 _ => None,
             };
 

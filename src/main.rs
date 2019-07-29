@@ -349,11 +349,7 @@ const APP: () = {
             }
 
             // Handle MIDI messages
-            let mut message = None;
-
-            resources.MIDI.lock(|m| {
-                message = m.dequeue();
-            });
+            let message = resources.MIDI.lock(|m| m.dequeue());
 
             if let Some(b) = message {
                 let mut led_event = None;
@@ -372,6 +368,16 @@ const APP: () = {
                         45...60 => (true, false, false),
                         60...75 => (true, false, true),
                         75...90 => (true, true, false),
+                        127 => {
+                            // show preset color depending on y, for Ardour compatibility
+                            match y {
+                                0 | 1 => (false, true, false),
+                                2 | 3 => (true, true, false),
+                                4 | 5 => (true, false, false),
+                                6 | 7 => (true, false, true),
+                                _ => panic!("This should never happen!"),
+                            }
+                        }
                         _ => (true, true, true),
                     };
 
@@ -442,20 +448,23 @@ const APP: () = {
         // Handle encoder changes
         if new_encoder_positions != encoder_positions {
             for i in 0..8 {
-                let diff = new_encoder_positions[i] - encoder_positions[i];
+                let diff: i32 = new_encoder_positions[i] - encoder_positions[i];
                 if diff != 0 {
-                    let offset = match diff {
+                    let offset: u8 = match diff.abs() {
                         1 => 1,
-                        -1 => -1,
-                        num if num > 0 => min(num * 10, 63),
-                        num if num < 0 => max(num * 10, -63),
-                        _ => panic!("This should never happen"),
+                        num => min(num * 10, 63) as u8,
+                    };
+
+                    let value = if diff.signum() == -1 { // most significant bit => direction
+                        offset | (1 << 6)
+                    } else {
+                        offset
                     };
 
                     let midi = ControlChange::new(
                         *resources.ENCODER_PARAMETER_TYPE as u8,
                         i as u8 + 1,
-                        (64 as i32 + offset) as u8,
+                        value,
                     )
                     .unwrap()
                     .to_bytes();

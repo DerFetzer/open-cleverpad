@@ -31,7 +31,9 @@ use usb_device::bus;
 use usb_device::prelude::*;
 
 use crate::hal::ButtonEventEdge::{NegEdge, PosEdge};
-use crate::hal::{ButtonEvent, ButtonEventEdge, ButtonType, LedEvent, LedEventType, ParameterType};
+use crate::hal::{
+    ButtonEvent, ButtonEventEdge, ButtonType, LedColor, LedEvent, LedEventType, ParameterType, RGB,
+};
 use core::cmp::{max, min};
 use heapless::consts::*;
 use heapless::spsc::{Consumer, Producer, Queue};
@@ -360,29 +362,22 @@ const APP: () = {
 
                     let btn = ButtonType::Pad { x, y };
 
-                    let (r, g, b) = match note_on.velocity {
-                        0 => (false, false, false),
-                        1...15 => (false, false, true),
-                        15...30 => (false, true, false),
-                        30...45 => (false, true, true),
-                        45...60 => (true, false, false),
-                        60...75 => (true, false, true),
-                        75...90 => (true, true, false),
+                    let rgb = match note_on.velocity {
                         127 => {
                             // show preset color depending on y, for Ardour compatibility
                             match y {
-                                0 | 1 => (false, true, false),
-                                2 | 3 => (true, true, false),
-                                4 | 5 => (true, false, false),
-                                6 | 7 => (true, false, true),
+                                0 | 1 => LedColor::Green,
+                                2 | 3 => LedColor::Yellow,
+                                4 | 5 => LedColor::Red,
+                                6 | 7 => LedColor::Purple,
                                 _ => panic!("This should never happen!"),
                             }
                         }
-                        _ => (true, true, true),
+                        num => LedColor::from_value(num),
                     };
 
                     if x < 8 && y < 8 {
-                        led_event = Some(LedEvent::new(btn, LedEventType::SwitchColor { r, g, b }))
+                        led_event = Some(LedEvent::new(btn, LedEventType::SwitchColor(rgb)))
                     }
                 };
 
@@ -395,11 +390,7 @@ const APP: () = {
                     if x < 8 && y < 8 {
                         led_event = Some(LedEvent::new(
                             btn,
-                            LedEventType::SwitchColor {
-                                r: false,
-                                g: false,
-                                b: false,
-                            },
+                            LedEventType::SwitchColor(LedColor::Black),
                         ));
                     }
                 };
@@ -455,7 +446,8 @@ const APP: () = {
                         num => min(num * 10, 63) as u8,
                     };
 
-                    let value = if diff.signum() == -1 { // most significant bit => direction
+                    let value = if diff.signum() == -1 {
+                        // most significant bit => direction
                         offset | (1 << 6)
                     } else {
                         offset

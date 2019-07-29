@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ArdourMIDIBindings version="1.0.0" name="Open-CleverPAD">
+
+<!-- 2019-07-28 DerFetzer: file created -->
+
+<!--  Rotary Encoders -->
+  <Binding channel="1" enc-l="1" uri="/route/gain 1"/>
+  <Binding channel="1" enc-l="2" uri="/route/gain 2"/>
+  <Binding channel="1" enc-l="3" uri="/route/gain 3"/>
+  <Binding channel="1" enc-l="4" uri="/route/gain 4"/>
+  <Binding channel="1" enc-l="5" uri="/route/gain 5"/>
+  <Binding channel="1" enc-l="6" uri="/route/gain 6"/>
+  <Binding channel="1" enc-l="7" uri="/route/gain 7"/>
+  <Binding channel="1" enc-l="8" uri="/route/gain 8"/>
+  <Binding channel="1" enc-l="9" uri="/route/gain 9"/>
+  <Binding channel="1" enc-l="10" uri="/route/gain 10"/>
+  <Binding channel="1" enc-l="11" uri="/route/gain 11"/>
+  <Binding channel="1" enc-l="12" uri="/route/gain 12"/>
+  <Binding channel="1" enc-l="13" uri="/route/gain 13"/>
+  <Binding channel="1" enc-l="14" uri="/route/gain 14"/>
+  <Binding channel="1" enc-l="15" uri="/route/gain 15"/>
+  <Binding channel="1" enc-l="16" uri="/route/gain 16"/>
+
+  <Binding channel="2" enc-l="1" uri="/route/send/gain 1 1"/>
+  <Binding channel="2" enc-l="2" uri="/route/send/gain 2 1"/>
+  <Binding channel="2" enc-l="3" uri="/route/send/gain 3 1"/>
+  <Binding channel="2" enc-l="4" uri="/route/send/gain 4 1"/>
+  <Binding channel="2" enc-l="5" uri="/route/send/gain 5 1"/>
+  <Binding channel="2" enc-l="6" uri="/route/send/gain 6 1"/>
+  <Binding channel="2" enc-l="7" uri="/route/send/gain 7 1"/>
+  <Binding channel="2" enc-l="8" uri="/route/send/gain 8 1"/>
+  <Binding channel="2" enc-l="9" uri="/route/send/gain 9 1"/>
+  <Binding channel="2" enc-l="10" uri="/route/send/gain 10 1"/>
+  <Binding channel="2" enc-l="11" uri="/route/send/gain 11 1"/>
+  <Binding channel="2" enc-l="12" uri="/route/send/gain 12 1"/>
+  <Binding channel="2" enc-l="13" uri="/route/send/gain 13 1"/>
+  <Binding channel="2" enc-l="14" uri="/route/send/gain 14 1"/>
+  <Binding channel="2" enc-l="15" uri="/route/send/gain 15 1"/>
+  <Binding channel="2" enc-l="16" uri="/route/send/gain 16 1"/>
+
+  <Binding channel="3" enc-l="1" uri="/route/send/gain 1 2"/>
+  <Binding channel="3" enc-l="2" uri="/route/send/gain 2 2"/>
+  <Binding channel="3" enc-l="3" uri="/route/send/gain 3 2"/>
+  <Binding channel="3" enc-l="4" uri="/route/send/gain 4 2"/>
+  <Binding channel="3" enc-l="5" uri="/route/send/gain 5 2"/>
+  <Binding channel="3" enc-l="6" uri="/route/send/gain 6 2"/>
+  <Binding channel="3" enc-l="7" uri="/route/send/gain 7 2"/>
+  <Binding channel="3" enc-l="8" uri="/route/send/gain 8 2"/>
+  <Binding channel="3" enc-l="9" uri="/route/send/gain 9 2"/>
+  <Binding channel="3" enc-l="10" uri="/route/send/gain 10 2"/>
+  <Binding channel="3" enc-l="11" uri="/route/send/gain 11 2"/>
+  <Binding channel="3" enc-l="12" uri="/route/send/gain 12 2"/>
+  <Binding channel="3" enc-l="13" uri="/route/send/gain 13 2"/>
+  <Binding channel="3" enc-l="14" uri="/route/send/gain 14 2"/>
+  <Binding channel="3" enc-l="15" uri="/route/send/gain 15 2"/>
+  <Binding channel="3" enc-l="16" uri="/route/send/gain 16 2"/>
+
+  <Binding channel="4" enc-l="1" uri="/route/pandirection 1"/>
+  <Binding channel="4" enc-l="2" uri="/route/pandirection 2"/>
+  <Binding channel="4" enc-l="3" uri="/route/pandirection 3"/>
+  <Binding channel="4" enc-l="4" uri="/route/pandirection 4"/>
+  <Binding channel="4" enc-l="5" uri="/route/pandirection 5"/>
+  <Binding channel="4" enc-l="6" uri="/route/pandirection 6"/>
+  <Binding channel="4" enc-l="7" uri="/route/pandirection 7"/>
+  <Binding channel="4" enc-l="8" uri="/route/pandirection 8"/>
+  <Binding channel="4" enc-l="10" uri="/route/pandirection 10"/>
+  <Binding channel="4" enc-l="11" uri="/route/pandirection 11"/>
+  <Binding channel="4" enc-l="12" uri="/route/pandirection 12"/>
+  <Binding channel="4" enc-l="13" uri="/route/pandirection 13"/>
+  <Binding channel="4" enc-l="14" uri="/route/pandirection 14"/>
+  <Binding channel="4" enc-l="15" uri="/route/pandirection 15"/>
+  <Binding channel="4" enc-l="16" uri="/route/pandirection 16"/>
+
+  <Binding channel="5" enc-l="1" uri="/route/panwidth 1"/>
+  <Binding channel="5" enc-l="2" uri="/route/panwidth 2"/>
+  <Binding channel="5" enc-l="3" uri="/route/panwidth 3"/>
+  <Binding channel="5" enc-l="4" uri="/route/panwidth 4"/>
+  <Binding channel="5" enc-l="5" uri="/route/panwidth 5"/>
+  <Binding channel="5" enc-l="6" uri="/route/panwidth 6"/>
+  <Binding channel="5" enc-l="7" uri="/route/panwidth 7"/>
+  <Binding channel="5" enc-l="8" uri="/route/panwidth 8"/>
+  <Binding channel="5" enc-l="10" uri="/route/panwidth 10"/>
+  <Binding channel="5" enc-l="11" uri="/route/panwidth 11"/>
+  <Binding channel="5" enc-l="12" uri="/route/panwidth 12"/>
+  <Binding channel="5" enc-l="13" uri="/route/panwidth 13"/>
+  <Binding channel="5" enc-l="14" uri="/route/panwidth 14"/>
+  <Binding channel="5" enc-l="15" uri="/route/panwidth 15"/>
+  <Binding channel="5" enc-l="16" uri="/route/panwidth 16"/>
+
+  <!--  Pads -->
+  <Binding channel="1" note="0"  uri="/route/solo 1" />
+  <Binding channel="1" note="1"  uri="/route/solo 2" />
+  <Binding channel="1" note="2"  uri="/route/solo 3" />
+  <Binding channel="1" note="3"  uri="/route/solo 4" />
+  <Binding channel="1" note="4"  uri="/route/solo 5" />
+  <Binding channel="1" note="5"  uri="/route/solo 6" />
+  <Binding channel="1" note="6"  uri="/route/solo 7" />
+  <Binding channel="1" note="7"  uri="/route/solo 8" />
+  <Binding channel="1" note="8"  uri="/route/solo 9" />
+  <Binding channel="1" note="9"  uri="/route/solo 10" />
+  <Binding channel="1" note="10"  uri="/route/solo 11" />
+  <Binding channel="1" note="11"  uri="/route/solo 12" />
+  <Binding channel="1" note="12"  uri="/route/solo 13" />
+  <Binding channel="1" note="13"  uri="/route/solo 14" />
+  <Binding channel="1" note="14"  uri="/route/solo 15" />
+  <Binding channel="1" note="15"  uri="/route/solo 16" />
+
+  <Binding channel="1" note="16"  uri="/route/mute 1" />
+  <Binding channel="1" note="17"  uri="/route/mute 2" />
+  <Binding channel="1" note="18"  uri="/route/mute 3" />
+  <Binding channel="1" note="19"  uri="/route/mute 4" />
+  <Binding channel="1" note="20"  uri="/route/mute 5" />
+  <Binding channel="1" note="21"  uri="/route/mute 6" />
+  <Binding channel="1" note="22"  uri="/route/mute 7" />
+  <Binding channel="1" note="23"  uri="/route/mute 8" />
+  <Binding channel="1" note="24"  uri="/route/mute 9" />
+  <Binding channel="1" note="25"  uri="/route/mute 10" />
+  <Binding channel="1" note="26"  uri="/route/mute 11" />
+  <Binding channel="1" note="27"  uri="/route/mute 12" />
+  <Binding channel="1" note="28"  uri="/route/mute 13" />
+  <Binding channel="1" note="29"  uri="/route/mute 14" />
+  <Binding channel="1" note="30"  uri="/route/mute 15" />
+  <Binding channel="1" note="31"  uri="/route/mute 16" />
+
+  <Binding channel="1" note="32"  uri="/route/recenable 1" />
+  <Binding channel="1" note="33"  uri="/route/recenable 2" />
+  <Binding channel="1" note="34"  uri="/route/recenable 3" />
+  <Binding channel="1" note="35"  uri="/route/recenable 4" />
+  <Binding channel="1" note="36"  uri="/route/recenable 5" />
+  <Binding channel="1" note="37"  uri="/route/recenable 6" />
+  <Binding channel="1" note="38"  uri="/route/recenable 7" />
+  <Binding channel="1" note="39"  uri="/route/recenable 8" />
+  <Binding channel="1" note="40"  uri="/route/recenable 9" />
+  <Binding channel="1" note="41"  uri="/route/recenable 10" />
+  <Binding channel="1" note="42"  uri="/route/recenable 11" />
+  <Binding channel="1" note="43"  uri="/route/recenable 12" />
+  <Binding channel="1" note="44"  uri="/route/recenable 13" />
+  <Binding channel="1" note="45"  uri="/route/recenable 14" />
+  <Binding channel="1" note="46"  uri="/route/recenable 15" />
+  <Binding channel="1" note="47"  uri="/route/recenable 16" />
+
+</ArdourMIDIBindings>

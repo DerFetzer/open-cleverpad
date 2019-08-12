@@ -294,50 +294,54 @@ const APP: () = {
                         rtfm::pend(pac::Interrupt::USB_LP_CAN_RX0);
                     }
                     ButtonType::Master(channel) => {
-                        // switch MIDI channel for pads
-                        resources.LEDS.lock(|l| {
-                            for i in 0..6 {
-                                master_channel_leds[master_channel as usize - 1][i] =
-                                    l.get_bank_value(i);
-                                l.set_bank_value(i, master_channel_leds[channel as usize - 1][i]);
-                            }
+                        if on {
+                            // switch MIDI channel for pads
+                            resources.LEDS.lock(|l| {
+                                for i in 0..6 {
+                                    master_channel_leds[master_channel as usize - 1][i] =
+                                        l.get_bank_value(i);
+                                    l.set_bank_value(i, master_channel_leds[channel as usize - 1][i]);
+                                }
 
-                            let master_off_event = LedEvent::new(
-                                ButtonType::Master(master_channel as u8),
-                                LedEventType::Switch(false),
-                            );
-                            let master_on_event = LedEvent::new(e.btn, LedEventType::Switch(true));
+                                let master_off_event = LedEvent::new(
+                                    ButtonType::Master(master_channel as u8),
+                                    LedEventType::Switch(false),
+                                );
+                                let master_on_event = LedEvent::new(e.btn, LedEventType::Switch(true));
 
-                            let mut banks = l.get_banks();
-                            banks = master_off_event.apply_to_banks(banks);
-                            banks = master_on_event.apply_to_banks(banks);
-                            l.set_banks(banks);
+                                let mut banks = l.get_banks();
+                                banks = master_off_event.apply_to_banks(banks);
+                                banks = master_on_event.apply_to_banks(banks);
+                                l.set_banks(banks);
 
-                            master_channel = channel;
-                        })
+                                master_channel = channel;
+                            })
+                        }
                     }
                     ButtonType::Parameter(param) => {
-                        let encoder_parameter_type =
-                            resources.ENCODER_PARAMETER_TYPE.lock(|ept| *ept);
+                        if on {
+                            let encoder_parameter_type =
+                                resources.ENCODER_PARAMETER_TYPE.lock(|ept| *ept);
 
-                        let param_value = param as u8;
+                            let param_value = param as u8;
 
-                        let parameter_off_event = LedEvent::new(
-                            ButtonType::Parameter(encoder_parameter_type),
-                            LedEventType::Switch(false),
-                        );
-                        let parameter_on_event = LedEvent::new(e.btn, LedEventType::Switch(true));
+                            let parameter_off_event = LedEvent::new(
+                                ButtonType::Parameter(encoder_parameter_type),
+                                LedEventType::Switch(false),
+                            );
+                            let parameter_on_event = LedEvent::new(e.btn, LedEventType::Switch(true));
 
-                        resources.ENCODER_PARAMETER_TYPE.lock(|ept| {
-                            *ept = param;
-                        });
+                            resources.ENCODER_PARAMETER_TYPE.lock(|ept| {
+                                *ept = param;
+                            });
 
-                        resources.LEDS.lock(|l| {
-                            let mut banks = l.get_banks();
-                            banks = parameter_off_event.apply_to_banks(banks);
-                            banks = parameter_on_event.apply_to_banks(banks);
-                            l.set_banks(banks);
-                        });
+                            resources.LEDS.lock(|l| {
+                                let mut banks = l.get_banks();
+                                banks = parameter_off_event.apply_to_banks(banks);
+                                banks = parameter_on_event.apply_to_banks(banks);
+                                l.set_banks(banks);
+                            });
+                        }
                     }
                     b => {
                         let led_event = LedEvent::new(e.btn, LedEventType::Switch(on));

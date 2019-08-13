@@ -418,7 +418,7 @@ const APP: () = {
             .unwrap();
     }
 
-    #[task(priority = 2, schedule = [enc], spawn = [activate_debug_leds], resources = [ENCODERS, ENCODER_POSITIONS, DEBUG_PIN_PA10])]
+    #[task(priority = 2, schedule = [enc], resources = [ENCODERS, ENCODER_POSITIONS, DEBUG_PIN_PA10])]
     fn enc() {
         resources.DEBUG_PIN_PA10.set_high();
 
@@ -510,37 +510,15 @@ const APP: () = {
             .unwrap();
     }
 
-    #[task(resources = [LEDS, MIDI])]
-    fn activate_debug_leds() {
-        resources.LEDS.lock(|l| l.set_bank_value(0, 0xFFFFFFFF));
-        resources.MIDI.lock(|m| {
-            m.enqueue(NoteOn::new(0, 0x37, 0x47).unwrap().to_bytes());
-            match m.dequeue() {
-                Some(message) => {
-                    if let Some(note_on) = NoteOn::from_bytes(message) {
-                        //hprintln!("{:?}", note_on).unwrap()
-                    }
-                }
-                _ => (),
-            }
-        });
-        let mut delay = AsmDelay::new(bitrate::U32BitrateExt::mhz(72));
-        delay.delay_ms(200_u32);
-        resources.LEDS.lock(|l| l.set_bank_value(0, 0x0));
-    }
-
-    #[interrupt(resources = [USB_DEV, MIDI], spawn = [activate_debug_leds])]
+    #[interrupt(resources = [USB_DEV, MIDI])]
     fn USB_HP_CAN_TX() {
-        if usb_poll(&mut resources.USB_DEV, &mut resources.MIDI) {
-            //spawn.activate_debug_leds();
-        };
+        usb_poll(&mut resources.USB_DEV, &mut resources.MIDI);
+
     }
 
-    #[interrupt(resources = [USB_DEV, MIDI], spawn = [activate_debug_leds])]
+    #[interrupt(resources = [USB_DEV, MIDI])]
     fn USB_LP_CAN_RX0() {
-        if usb_poll(&mut resources.USB_DEV, &mut resources.MIDI) {
-            //spawn.activate_debug_leds();
-        };
+        usb_poll(&mut resources.USB_DEV, &mut resources.MIDI);
     }
 
     extern "C" {

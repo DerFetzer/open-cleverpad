@@ -128,13 +128,13 @@ pub struct RGB {
 impl LedColor {
     pub fn from_value(v: u8) -> LedColor {
         match v {
-            0...16 => LedColor::Black,
-            16...32 => LedColor::White,
-            32...48 => LedColor::Yellow,
-            48...64 => LedColor::Aqua,
-            64...80 => LedColor::Purple,
-            80...96 => LedColor::Blue,
-            96...112 => LedColor::Green,
+            0..=16 => LedColor::Black,
+            16..=32 => LedColor::White,
+            32..=48 => LedColor::Yellow,
+            48..=64 => LedColor::Aqua,
+            64..=80 => LedColor::Purple,
+            80..=96 => LedColor::Blue,
+            96..=112 => LedColor::Green,
             _ => LedColor::Red,
         }
     }
@@ -259,7 +259,6 @@ impl LedEvent {
                             new_banks[bank_b] &= !(1 << bit);
                         }
                     }
-                    _ => panic!("This should never happen!"),
                 };
             }
             _ => panic!("Invalid LED and button types!"),

@@ -7,10 +7,6 @@
 #[allow(unused_imports)]
 use panic_semihosting;
 
-use cortex_m::asm::{delay, wfi};
-
-use cortex_m_semihosting::hprintln;
-
 use rtfm::Instant;
 
 use asm_delay::AsmDelay;
@@ -20,7 +16,6 @@ use stm32f1xx_hal::gpio::State::High;
 use stm32f1xx_hal::gpio::{Output, PushPull};
 use stm32f1xx_hal::pac;
 use stm32f1xx_hal::prelude::*;
-use stm32f1xx_hal::qei::Qei;
 
 use crate::hardware::{ButtonMatrix, ButtonMatrixPins, EncoderPins, Encoders, LedPins, Leds};
 use crate::midi::{ControlChange, MidiMessage, NoteOff, NoteOn};
@@ -32,9 +27,9 @@ use usb_device::prelude::*;
 
 use crate::hal::ButtonEventEdge::{NegEdge, PosEdge};
 use crate::hal::{
-    ButtonEvent, ButtonEventEdge, ButtonType, LedColor, LedEvent, LedEventType, ParameterType, RGB,
+    ButtonEvent, ButtonEventEdge, ButtonType, LedColor, LedEvent, LedEventType, ParameterType,
 };
-use core::cmp::{max, min};
+use core::cmp::min;
 use heapless::consts::*;
 use heapless::spsc::{Consumer, Producer, Queue};
 
@@ -300,14 +295,18 @@ const APP: () = {
                                 for i in 0..6 {
                                     master_channel_leds[master_channel as usize - 1][i] =
                                         l.get_bank_value(i);
-                                    l.set_bank_value(i, master_channel_leds[channel as usize - 1][i]);
+                                    l.set_bank_value(
+                                        i,
+                                        master_channel_leds[channel as usize - 1][i],
+                                    );
                                 }
 
                                 let master_off_event = LedEvent::new(
                                     ButtonType::Master(master_channel as u8),
                                     LedEventType::Switch(false),
                                 );
-                                let master_on_event = LedEvent::new(e.btn, LedEventType::Switch(true));
+                                let master_on_event =
+                                    LedEvent::new(e.btn, LedEventType::Switch(true));
 
                                 let mut banks = l.get_banks();
                                 banks = master_off_event.apply_to_banks(banks);
@@ -323,13 +322,12 @@ const APP: () = {
                             let encoder_parameter_type =
                                 resources.ENCODER_PARAMETER_TYPE.lock(|ept| *ept);
 
-                            let param_value = param as u8;
-
                             let parameter_off_event = LedEvent::new(
                                 ButtonType::Parameter(encoder_parameter_type),
                                 LedEventType::Switch(false),
                             );
-                            let parameter_on_event = LedEvent::new(e.btn, LedEventType::Switch(true));
+                            let parameter_on_event =
+                                LedEvent::new(e.btn, LedEventType::Switch(true));
 
                             resources.ENCODER_PARAMETER_TYPE.lock(|ept| {
                                 *ept = param;
@@ -344,7 +342,7 @@ const APP: () = {
                         }
                     }
                     b => {
-                        let led_event = LedEvent::new(e.btn, LedEventType::Switch(on));
+                        let led_event = LedEvent::new(b, LedEventType::Switch(on));
 
                         resources.LEDS.lock(|l| {
                             let banks = l.get_banks();
@@ -437,7 +435,7 @@ const APP: () = {
 
     #[task(schedule = [enc_eval], resources = [ENCODER_POSITIONS, PREV_ENCODER_POSITIONS, ENCODER_PARAMETER_TYPE, MIDI])]
     fn enc_eval() {
-        let mut new_encoder_positions = resources.ENCODER_POSITIONS.lock(|&mut p| p);
+        let new_encoder_positions = resources.ENCODER_POSITIONS.lock(|&mut p| p);
         let encoder_positions = *resources.PREV_ENCODER_POSITIONS;
 
         // Handle encoder changes
@@ -513,7 +511,6 @@ const APP: () = {
     #[interrupt(resources = [USB_DEV, MIDI])]
     fn USB_HP_CAN_TX() {
         usb_poll(&mut resources.USB_DEV, &mut resources.MIDI);
-
     }
 
     #[interrupt(resources = [USB_DEV, MIDI])]

@@ -2,7 +2,6 @@ use cortex_m::asm::delay;
 
 use asm_delay::AsmDelay;
 
-use stm32f1xx_hal::device::TIM2;
 use stm32f1xx_hal::gpio::gpioa::{PA0, PA1, PA2, PA3, PA4, PA5};
 use stm32f1xx_hal::gpio::gpiob::{
     PB0, PB1, PB10, PB12, PB13, PB14, PB15, PB2, PB3, PB4, PB5, PB6, PB7, PB8, PB9,
@@ -11,7 +10,6 @@ use stm32f1xx_hal::gpio::gpioc::{PC0, PC1, PC10, PC11, PC12, PC13, PC14, PC15, P
 
 use stm32f1xx_hal::gpio::{Floating, Input, OpenDrain, Output, PushPull};
 use stm32f1xx_hal::prelude::*;
-use stm32f1xx_hal::qei::Qei;
 
 pub struct ButtonMatrix {
     pins: ButtonMatrixPins,
@@ -248,14 +246,14 @@ impl Encoders {
             };
 
             match a_stable {
-                (Some(false)) => self.a_state &= !(1_u8 << i), // a stable false
-                (Some(true)) => self.a_state |= 1_u8 << i,     // a stable true
+                Some(false) => self.a_state &= !(1_u8 << i), // a stable false
+                Some(true) => self.a_state |= 1_u8 << i,     // a stable true
                 _ => (),
             };
 
             match b_stable {
-                (Some(false)) => self.b_state &= !(1_u8 << i), // b stable false
-                (Some(true)) => self.b_state |= 1_u8 << i,     // b stable true
+                Some(false) => self.b_state &= !(1_u8 << i), // b stable false
+                Some(true) => self.b_state |= 1_u8 << i,     // b stable true
                 _ => (),
             };
         }

@@ -44,12 +44,14 @@ version = "0.6.0"
 features = ["const-fn"]
 
 [dependencies.cortex-m-rt]
-version = "0.6.8"
+version = "0.6.10"
 features = ["device"]
 
 [dependencies.cortex-m-rtfm]
 version = "0.4.3"
-features = ["timer-queue"]
+features = ["timer-queue", "nightly"]
+# To be able to use "nightly" feature you might have to add "maybe_uninit_extra" feature gate to this dependencies
+# source code.
 
 [dependencies.cortex-m-semihosting]
 version = "0.3.3"
@@ -61,6 +63,6 @@ version = "0.5.2"
 asm-delay = "0.7.0"
 bitrate = "0.1.1"
 panic-halt = "0.2.0"
-usb-device = "0.2.1"
+usb-device = "0.2.2"
 stm32-usbd = { version = "0.3", features = ["stm32f103xx"] }
 heapless = "0.5.0"

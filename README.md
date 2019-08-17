@@ -1,5 +1,3 @@
-# **This is pretty much work in progress and not usable at the moment at all!**
-
 # `open-cleverpad`
 
 > An open firmware for [MIDIPLUS SmartPAD][smartpad] (being a pretty cheap launchpad-like MIDI-controller)
@@ -8,22 +6,26 @@ This project is developed and maintained by [DerFetzer][team].
 
 ## Documentation
 
-The used STM32F103RBT6 unfortunately has flash read protection activated and
+* The used STM32F103RBT6 unfortunately has flash read protection activated and
 there is a function that resets the microcontroller when there is activity on the SWD interface.
 
-There is an update mechanism in the original firmware but I did not look at it for long.
+* There is an update mechanism in the original firmware but I did not look at it for long.
 Current updater can be downloaded at [MIDIPLUS homepage][firmware].
 
-[s0len0id][solenoid] assembled a great documentation of stock firmware function [here][smartpad-tester].
+* [s0len0id][solenoid] assembled a great documentation of stock firmware function [here][smartpad-tester].
 
-In order to remove read protection you have to mass erase the device, **so the original firmware will be lost**.
+* In order to remove read protection you have to mass erase the device, **so the original firmware will be lost**.
 You have to try during startup with something like the following:
 
 ``` console
 $ openocd -f /usr/share/openocd/scripts/interface/stlink-v1.cfg -f /usr/share/openocd/scripts/target/stm32f1x.cfg  -c init -c "reset halt" -c "flash banks" -c "stm32f1x mass_erase 0" -c "stm32f1x unlock 0"
 ```
 
-For reverse engineered information about the used hardware see [hardware](hardware) folder.
+* For reverse engineered information about the used hardware see [hardware](hardware) folder.
+
+* This firmware is designed to be used with the [HID-bootloader][bootloader].
+
+* Have a look at the included [Ardour MIDI map][midimap] to get an idea of used MIDI messages.
 
 ## Dependencies
 
@@ -67,3 +69,5 @@ to intervene to uphold that code of conduct.
 [firmware]: http://www.midiplus.com.tw/MIDIPLUS-Download.files/Firmware%20update/SmartPAD%20Firmware%20Update%20V0.15%2020171103.zip
 [smartpad-tester]: https://github.com/s0len0id/smartpad-tester
 [solenoid]: https://github.com/s0len0id
+[bootloader]: https://github.com/DerFetzer/STM32_HID_Bootloader
+[midimap]: /ardour/midi_maps/Open-CleverPAD.map

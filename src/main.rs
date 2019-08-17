@@ -259,7 +259,7 @@ const APP: () = {
         });
 
         let mut master_channel: u8 = 1;
-        let mut master_channel_leds = [[0_u32; 6]; 8];
+        let mut master_channel_leds = [[0_u32; 8]; 8];
 
         let master_led_event = LedEvent::new(ButtonType::Master(1), LedEventType::Switch(true));
 
@@ -359,6 +359,23 @@ const APP: () = {
                             l.set_banks(led_event.apply_to_banks(banks));
                         });
                     }
+                    ButtonType::Mode(mode) => {
+                        let midi = match on {
+                            true => NoteOn::new(9, mode as u8, 127).unwrap().to_bytes(),
+                            false => NoteOff::new(9, mode as u8).unwrap().to_bytes(),
+                        };
+
+                        resources.MIDI.lock(|m| m.enqueue(midi));
+                        rtfm::pend(pac::Interrupt::USB_LP_CAN_RX0);
+
+                        let led_event =
+                            LedEvent::new(ButtonType::Mode(mode), LedEventType::Switch(on));
+
+                        resources.LEDS.lock(|l| {
+                            let banks = l.get_banks();
+                            l.set_banks(led_event.apply_to_banks(banks));
+                        });
+                    }
                     b => {
                         let led_event = LedEvent::new(b, LedEventType::Switch(on));
 
@@ -375,6 +392,7 @@ const APP: () = {
 
             if let Some(b) = message {
                 let mut led_event = None;
+                let mut channel = 0;
 
                 if let Some(note_on) = NoteOn::from_bytes(b) {
                     let x = note_on.note % 8;
@@ -400,7 +418,8 @@ const APP: () = {
                     };
 
                     if x < 8 && y < 8 {
-                        led_event = Some(LedEvent::new(btn, LedEventType::SwitchColor(rgb)))
+                        led_event = Some(LedEvent::new(btn, LedEventType::SwitchColor(rgb)));
+                        channel = note_on.channel + 1;
                     }
                 };
 
@@ -415,14 +434,20 @@ const APP: () = {
                             btn,
                             LedEventType::SwitchColor(LedColor::Black),
                         ));
+                        channel = note_off.channel + 1;
                     }
                 };
 
                 if let Some(le) = led_event {
-                    resources.LEDS.lock(|l| {
-                        let banks = l.get_banks();
-                        l.set_banks(le.apply_to_banks(banks));
-                    });
+                    if channel == master_channel {
+                        resources.LEDS.lock(|l| {
+                            let banks = l.get_banks();
+                            l.set_banks(le.apply_to_banks(banks));
+                        });
+                    } else {
+                        master_channel_leds[channel as usize - 1] =
+                            le.apply_to_banks(master_channel_leds[channel as usize - 1])
+                    }
                 }
             }
         }

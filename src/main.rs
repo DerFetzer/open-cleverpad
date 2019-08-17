@@ -27,7 +27,8 @@ use usb_device::prelude::*;
 
 use crate::hal::ButtonEventEdge::{NegEdge, PosEdge};
 use crate::hal::{
-    ButtonEvent, ButtonEventEdge, ButtonType, LedColor, LedEvent, LedEventType, ParameterType,
+    ButtonEvent, ButtonEventEdge, ButtonType, Direction, LedColor, LedEvent, LedEventType,
+    ParameterType,
 };
 use core::cmp::min;
 use heapless::consts::*;
@@ -341,6 +342,23 @@ const APP: () = {
                             });
                         }
                     }
+                    ButtonType::Arrow(dir) => {
+                        let midi = match on {
+                            true => NoteOn::new(8, dir as u8, 127).unwrap().to_bytes(),
+                            false => NoteOff::new(8, dir as u8).unwrap().to_bytes(),
+                        };
+
+                        resources.MIDI.lock(|m| m.enqueue(midi));
+                        rtfm::pend(pac::Interrupt::USB_LP_CAN_RX0);
+
+                        let led_event =
+                            LedEvent::new(ButtonType::Arrow(dir), LedEventType::Switch(on));
+
+                        resources.LEDS.lock(|l| {
+                            let banks = l.get_banks();
+                            l.set_banks(led_event.apply_to_banks(banks));
+                        });
+                    }
                     b => {
                         let led_event = LedEvent::new(b, LedEventType::Switch(on));
 
@@ -368,10 +386,13 @@ const APP: () = {
                         127 => {
                             // show preset color depending on y, for Ardour compatibility
                             match y {
-                                0 | 1 => LedColor::Green,
-                                2 | 3 => LedColor::Yellow,
-                                4 | 5 => LedColor::Red,
-                                6 | 7 => LedColor::Purple,
+                                0 => LedColor::Green,
+                                1 => LedColor::Yellow,
+                                2 => LedColor::Red,
+                                3 => LedColor::Purple,
+                                4 => LedColor::Aqua,
+                                5 => LedColor::Blue,
+                                6 | 7 => LedColor::White,
                                 _ => panic!("This should never happen!"),
                             }
                         }

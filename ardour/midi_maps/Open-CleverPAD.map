@@ -14,7 +14,6 @@
   <Binding channel="1" enc-l="7" uri="/route/gain B7"/>
   <Binding channel="1" enc-l="8" uri="/route/gain B8"/>
 
-
   <Binding channel="2" enc-l="1" uri="/route/send/gain B1 1"/>
   <Binding channel="2" enc-l="2" uri="/route/send/gain B2 1"/>
   <Binding channel="2" enc-l="3" uri="/route/send/gain B3 1"/>
@@ -50,6 +49,15 @@
   <Binding channel="5" enc-l="6" uri="/route/panwidth B6"/>
   <Binding channel="5" enc-l="7" uri="/route/panwidth B7"/>
   <Binding channel="5" enc-l="8" uri="/route/panwidth B8"/>
+
+  <Binding channel="6" enc-l="1" uri="/route/trim B1"/>
+  <Binding channel="6" enc-l="2" uri="/route/trim B2"/>
+  <Binding channel="6" enc-l="3" uri="/route/trim B3"/>
+  <Binding channel="6" enc-l="4" uri="/route/trim B4"/>
+  <Binding channel="6" enc-l="5" uri="/route/trim B5"/>
+  <Binding channel="6" enc-l="6" uri="/route/trim B6"/>
+  <Binding channel="6" enc-l="7" uri="/route/trim B7"/>
+  <Binding channel="6" enc-l="8" uri="/route/trim B8"/>
 
   <!--  Pads -->
   <Binding channel="1" note="0"  uri="/route/solo B1" />

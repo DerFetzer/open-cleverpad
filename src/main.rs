@@ -65,8 +65,8 @@ const APP: () = {
     static mut USB_DEV: UsbDevice<'static, UsbBusType> = ();
     static mut MIDI: usb_midi::MidiClass<'static, UsbBusType> = ();
 
-    static mut BUTTON_EVENT_P: Producer<'static, ButtonEvent, U4> = ();
-    static mut BUTTON_EVENT_C: Consumer<'static, ButtonEvent, U4> = ();
+    static mut BUTTON_EVENT_P: Producer<'static, ButtonEvent, U16> = ();
+    static mut BUTTON_EVENT_C: Consumer<'static, ButtonEvent, U16> = ();
 
     static mut DEBUG_PIN_PA9: PA9<Output<PushPull>> = ();
     static mut DEBUG_PIN_PA10: PA10<Output<PushPull>> = ();
@@ -74,7 +74,7 @@ const APP: () = {
     #[init(schedule = [led_bank, enc, enc_eval, button])]
     fn init() -> init::LateResources {
         static mut USB_BUS: Option<bus::UsbBusAllocator<UsbBusType>> = None;
-        static mut BUTTON_QUEUE: Option<Queue<ButtonEvent, U4>> = None;
+        static mut BUTTON_QUEUE: Option<Queue<ButtonEvent, U16>> = None;
 
         // Take ownership over the raw flash and rcc devices and convert them into the corresponding
         // HAL structs

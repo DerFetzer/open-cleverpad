@@ -128,13 +128,13 @@ pub struct RGB {
 impl LedColor {
     pub fn from_value(v: u8) -> LedColor {
         match v {
-            0..=16 => LedColor::Black,
-            16..=32 => LedColor::White,
-            32..=48 => LedColor::Yellow,
-            48..=64 => LedColor::Aqua,
-            64..=80 => LedColor::Purple,
-            80..=96 => LedColor::Blue,
-            96..=112 => LedColor::Green,
+            0..=15 => LedColor::Black,
+            16..=31 => LedColor::White,
+            32..=47 => LedColor::Yellow,
+            48..=63 => LedColor::Aqua,
+            64..=79 => LedColor::Purple,
+            80..=95 => LedColor::Blue,
+            96..=111 => LedColor::Green,
             _ => LedColor::Red,
         }
     }

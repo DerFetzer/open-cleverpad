@@ -48,8 +48,8 @@ const BUTTON_COL_PERIOD: u32 = 700_000; // ~.1kHz
 
 const STARTUP_DELAY: u32 = 70_000_000; // ~1Hz
 
-const VID: u16 = 0x1122;
-const PID: u16 = 0x3344;
+const VID: u16 = 0x1ACC;
+const PID: u16 = 0x3801;
 
 #[rtfm::app(device = stm32f1xx_hal::pac)]
 const APP: () = {

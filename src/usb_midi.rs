@@ -126,7 +126,7 @@ impl<B: UsbBus> UsbClass<B> for MidiClass<'_, B> {
         writer.interface(self.ms_if, USB_CLASS_AUDIO, AUDIO_SUBCLASS_MS, 0)?;
         writer.write(
             CS_INTERFACE,
-            &[MS_TYPE_HEADER, 0x01, 0x00, 0x32, 0x00 /*length_total*/],
+            &[MS_TYPE_HEADER, 0x00, 0x01, 0x32, 0x00 /*length_total*/],
         )?;
         writer.write(CS_INTERFACE, &[MS_MIDI_IN_JACK, 0x01, 0x01, 0x00])?;
         writer.write(

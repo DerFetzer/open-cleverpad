@@ -214,7 +214,7 @@ const APP: () = {
         let usb_dev = UsbDeviceBuilder::new(USB_BUS.as_ref().unwrap(), UsbVidPid(VID, PID))
             .manufacturer("derfetzer")
             .product("open-cleverpad")
-            .serial_number("12345678")
+            .max_power(500)
             .build();
 
         let button_delay = AsmDelay::new(bitrate::U32BitrateExt::mhz(72));

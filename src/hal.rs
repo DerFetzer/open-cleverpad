@@ -47,7 +47,7 @@ pub struct ButtonEvent {
     pub event: ButtonEventEdge,
 }
 
-static PARAMETER_TYPES: [ParameterType; 8] = [
+pub static PARAMETER_TYPES: [ParameterType; 8] = [
     ParameterType::Volume,
     ParameterType::SendA,
     ParameterType::SendB,
@@ -58,14 +58,14 @@ static PARAMETER_TYPES: [ParameterType; 8] = [
     ParameterType::Control4,
 ];
 
-static DIRECTION_TYPES: [Direction; 4] = [
+pub static DIRECTION_TYPES: [Direction; 4] = [
     Direction::Up,
     Direction::Down,
     Direction::Left,
     Direction::Right,
 ];
 
-static MODE_TYPES: [ModeType; 4] = [
+pub static MODE_TYPES: [ModeType; 4] = [
     ModeType::Clip,
     ModeType::Mode1,
     ModeType::Mode2,

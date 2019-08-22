@@ -28,7 +28,7 @@ use usb_device::prelude::*;
 use crate::hal::ButtonEventEdge::{NegEdge, PosEdge};
 use crate::hal::{
     ButtonEvent, ButtonEventEdge, ButtonType, Direction, LedColor, LedEvent, LedEventType,
-    ParameterType,
+    ParameterType, DIRECTION_TYPES, MODE_TYPES,
 };
 use core::cmp::min;
 use heapless::consts::*;
@@ -350,14 +350,6 @@ const APP: () = {
 
                         resources.MIDI.lock(|m| m.enqueue(midi));
                         rtfm::pend(pac::Interrupt::USB_LP_CAN_RX0);
-
-                        let led_event =
-                            LedEvent::new(ButtonType::Arrow(dir), LedEventType::Switch(on));
-
-                        resources.LEDS.lock(|l| {
-                            let banks = l.get_banks();
-                            l.set_banks(led_event.apply_to_banks(banks));
-                        });
                     }
                     ButtonType::Mode(mode) => {
                         let midi = match on {
@@ -367,22 +359,6 @@ const APP: () = {
 
                         resources.MIDI.lock(|m| m.enqueue(midi));
                         rtfm::pend(pac::Interrupt::USB_LP_CAN_RX0);
-
-                        let led_event =
-                            LedEvent::new(ButtonType::Mode(mode), LedEventType::Switch(on));
-
-                        resources.LEDS.lock(|l| {
-                            let banks = l.get_banks();
-                            l.set_banks(led_event.apply_to_banks(banks));
-                        });
-                    }
-                    b => {
-                        let led_event = LedEvent::new(b, LedEventType::Switch(on));
-
-                        resources.LEDS.lock(|l| {
-                            let banks = l.get_banks();
-                            l.set_banks(led_event.apply_to_banks(banks));
-                        });
                     }
                 };
             }
@@ -395,46 +371,91 @@ const APP: () = {
                 let mut channel = 0;
 
                 if let Some(note_on) = NoteOn::from_bytes(b) {
-                    let x = note_on.note % 8;
-                    let y = note_on.note / 8;
+                    match note_on.channel {
+                        0..=7 => {
+                            let x = note_on.note % 8;
+                            let y = note_on.note / 8;
 
-                    let btn = ButtonType::Pad { x, y };
+                            let btn = ButtonType::Pad { x, y };
 
-                    let rgb = match note_on.velocity {
-                        127 => {
-                            // show preset color depending on y, for Ardour compatibility
-                            match y {
-                                0 => LedColor::Green,
-                                1 => LedColor::Yellow,
-                                2 => LedColor::Red,
-                                3 => LedColor::Purple,
-                                4 => LedColor::Aqua,
-                                5 => LedColor::Blue,
-                                6 | 7 => LedColor::White,
-                                _ => panic!("This should never happen!"),
+                            let rgb = match note_on.velocity {
+                                127 => {
+                                    // show preset color depending on y, for Ardour compatibility
+                                    match y {
+                                        0 => LedColor::Green,
+                                        1 => LedColor::Yellow,
+                                        2 => LedColor::Red,
+                                        3 => LedColor::Purple,
+                                        4 => LedColor::Aqua,
+                                        5 => LedColor::Blue,
+                                        6 | 7 => LedColor::White,
+                                        _ => panic!("This should never happen!"),
+                                    }
+                                }
+                                num => LedColor::from_value(num),
+                            };
+
+                            if x < 8 && y < 8 {
+                                led_event =
+                                    Some(LedEvent::new(btn, LedEventType::SwitchColor(rgb)));
+                                channel = note_on.channel + 1;
                             }
                         }
-                        num => LedColor::from_value(num),
-                    };
+                        8 if note_on.note < 4 => {
+                            channel = master_channel;
 
-                    if x < 8 && y < 8 {
-                        led_event = Some(LedEvent::new(btn, LedEventType::SwitchColor(rgb)));
-                        channel = note_on.channel + 1;
+                            let btn = ButtonType::Arrow(DIRECTION_TYPES[note_on.note as usize]);
+
+                            led_event = Some(LedEvent::new(
+                                btn,
+                                LedEventType::Switch(note_on.velocity != 0),
+                            ))
+                        }
+                        9 if note_on.note < 4 => {
+                            channel = master_channel;
+
+                            let btn = ButtonType::Mode(MODE_TYPES[note_on.note as usize]);
+
+                            led_event = Some(LedEvent::new(
+                                btn,
+                                LedEventType::Switch(note_on.velocity != 0),
+                            ));
+                        }
+                        _ => (), // ignore message
                     }
                 };
 
                 if let Some(note_off) = NoteOff::from_bytes(b) {
-                    let x = note_off.note % 8;
-                    let y = note_off.note / 8;
+                    match note_off.channel {
+                        0..=7 => {
+                            let x = note_off.note % 8;
+                            let y = note_off.note / 8;
 
-                    let btn = ButtonType::Pad { x, y };
+                            let btn = ButtonType::Pad { x, y };
 
-                    if x < 8 && y < 8 {
-                        led_event = Some(LedEvent::new(
-                            btn,
-                            LedEventType::SwitchColor(LedColor::Black),
-                        ));
-                        channel = note_off.channel + 1;
+                            if x < 8 && y < 8 {
+                                led_event = Some(LedEvent::new(
+                                    btn,
+                                    LedEventType::SwitchColor(LedColor::Black),
+                                ));
+                                channel = note_off.channel + 1;
+                            }
+                        }
+                        8 => {
+                            channel = master_channel;
+
+                            let btn = ButtonType::Arrow(DIRECTION_TYPES[note_off.note as usize]);
+
+                            led_event = Some(LedEvent::new(btn, LedEventType::Switch(false)))
+                        }
+                        9 => {
+                            channel = master_channel;
+
+                            let btn = ButtonType::Mode(MODE_TYPES[note_off.note as usize]);
+
+                            led_event = Some(LedEvent::new(btn, LedEventType::Switch(false)));
+                        }
+                        _ => (), // ignore message
                     }
                 };
 

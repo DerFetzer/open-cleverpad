@@ -46,8 +46,6 @@ const ENC_CAPTURE_PERIOD: u32 = 14_000; // ~5kHz
 const ENC_EVAL_PERIOD: u32 = 1_400_000; // ~50Hz
 const BUTTON_COL_PERIOD: u32 = 700_000; // ~.1kHz
 
-const STARTUP_DELAY: u32 = 70_000_000; // ~1Hz
-
 const VID: u16 = 0x1ACC;
 const PID: u16 = 0x3801;
 
@@ -71,7 +69,7 @@ const APP: () = {
     static mut DEBUG_PIN_PA9: PA9<Output<PushPull>> = ();
     static mut DEBUG_PIN_PA10: PA10<Output<PushPull>> = ();
 
-    #[init(schedule = [led_bank, enc, enc_eval, button])]
+    #[init(spawn = [led_bank, enc, enc_eval, button])]
     fn init() -> init::LateResources {
         static mut USB_BUS: Option<bus::UsbBusAllocator<UsbBusType>> = None;
         static mut BUTTON_QUEUE: Option<Queue<ButtonEvent, U16>> = None;
@@ -220,18 +218,10 @@ const APP: () = {
         let button_delay = AsmDelay::new(bitrate::U32BitrateExt::mhz(72));
         let encoder_delay = AsmDelay::new(bitrate::U32BitrateExt::mhz(72));
 
-        schedule
-            .led_bank(Instant::now() + (STARTUP_DELAY + LED_BANK_PERIOD).cycles())
-            .unwrap();
-        schedule
-            .enc(Instant::now() + (STARTUP_DELAY + ENC_CAPTURE_PERIOD).cycles())
-            .unwrap();
-        schedule
-            .enc_eval(Instant::now() + (STARTUP_DELAY + ENC_EVAL_PERIOD).cycles())
-            .unwrap();
-        schedule
-            .button(Instant::now() + (STARTUP_DELAY + BUTTON_COL_PERIOD).cycles())
-            .unwrap();
+        spawn.led_bank().unwrap();
+        spawn.enc().unwrap();
+        spawn.enc_eval().unwrap();
+        spawn.button().unwrap();
 
         init::LateResources {
             LEDS: Leds::new(led_pins),

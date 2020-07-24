@@ -24,6 +24,10 @@ $ openocd -f /usr/share/openocd/scripts/interface/stlink-v1.cfg -f /usr/share/op
 * For reverse engineered information about the used hardware see [hardware](hardware) folder.
 
 * This firmware is designed to be used with the [HID-bootloader][bootloader].
+    * Compile the bootloader by executing `make smartpad` inside `./bootloader/F1` folder and flash the resulting binary via SWD.
+    * In order to enter bootloader mode you have to push and hold the first pad in the third row during power up for about 1 second.
+    * Use `cargo objcopy --release -- -O binary open-cleverpad.bin` to generate the binary.
+    * Flash the .bin file using `hid-flash` tool from `./cli` folder with something like the following: `hid-flash open-cleverpad.bin /dev/tty0`. Just use any serial device.
 
 * Have a look at the included [Ardour MIDI map][midimap] to get an idea of used MIDI messages.
 

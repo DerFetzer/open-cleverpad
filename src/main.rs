@@ -7,9 +7,9 @@
 #[allow(unused_imports)]
 use panic_semihosting;
 
-use rtfm::Instant;
+use rtic::cyccnt::{Instant, U32Ext};
 
-use asm_delay::AsmDelay;
+use asm_delay::{AsmDelay, bitrate};
 
 use stm32f1xx_hal::gpio::gpioa::{PA10, PA9};
 use stm32f1xx_hal::gpio::State::High;
@@ -49,35 +49,43 @@ const BUTTON_COL_PERIOD: u32 = 700_000; // ~.1kHz
 const VID: u16 = 0x1ACC;
 const PID: u16 = 0x3801;
 
-#[rtfm::app(device = stm32f1xx_hal::pac)]
+#[rtic::app(device = stm32f1xx_hal::pac, monotonic = rtic::cyccnt::CYCCNT, peripherals = true)]
 const APP: () = {
-    static mut LEDS: Leds = ();
-    static mut ENCODERS: Encoders = ();
-    static mut BUTTON_MATRIX: ButtonMatrix = ();
+    struct Resources {
+        LEDS: Leds,
+        ENCODERS: Encoders,
+        BUTTON_MATRIX: ButtonMatrix,
 
-    static mut ENCODER_POSITIONS: [i32; 8] = [0; 8];
-    static mut PREV_ENCODER_POSITIONS: [i32; 8] = [0; 8];
-    static mut ENCODER_PARAMETER_TYPE: ParameterType = ParameterType::Volume;
-    static mut PREV_BUTTON_STATE: [u8; 11] = [0; 11];
-
-    static mut USB_DEV: UsbDevice<'static, UsbBusType> = ();
-    static mut MIDI: usb_midi::MidiClass<'static, UsbBusType> = ();
-
-    static mut BUTTON_EVENT_P: Producer<'static, ButtonEvent, U16> = ();
-    static mut BUTTON_EVENT_C: Consumer<'static, ButtonEvent, U16> = ();
-
-    static mut DEBUG_PIN_PA9: PA9<Output<PushPull>> = ();
-    static mut DEBUG_PIN_PA10: PA10<Output<PushPull>> = ();
+        #[init([0, 0, 0, 0, 0, 0, 0, 0])]
+        ENCODER_POSITIONS: [i32; 8],
+        #[init([0, 0, 0, 0, 0, 0, 0, 0])]
+        PREV_ENCODER_POSITIONS: [i32; 8],
+        #[init(ParameterType::Volume)]
+        ENCODER_PARAMETER_TYPE: ParameterType,
+        #[init([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])]
+        PREV_BUTTON_STATE: [u8; 11],
+    
+        USB_DEV: UsbDevice<'static, UsbBusType>,
+        MIDI: usb_midi::MidiClass<'static, UsbBusType>,
+    
+        BUTTON_EVENT_P: Producer<'static, ButtonEvent, U16>,
+        BUTTON_EVENT_C: Consumer<'static, ButtonEvent, U16>,
+    
+        DEBUG_PIN_PA9: PA9<Output<PushPull>>,
+        DEBUG_PIN_PA10: PA10<Output<PushPull>>,
+    }
 
     #[init(spawn = [led_bank, enc, enc_eval, button])]
-    fn init() -> init::LateResources {
+    fn init(mut cx: init::Context) -> init::LateResources {
         static mut USB_BUS: Option<bus::UsbBusAllocator<UsbBusType>> = None;
         static mut BUTTON_QUEUE: Option<Queue<ButtonEvent, U16>> = None;
 
+        cx.core.DWT.enable_cycle_counter();
+
         // Take ownership over the raw flash and rcc devices and convert them into the corresponding
         // HAL structs
-        let mut flash = device.FLASH.constrain();
-        let mut rcc = device.RCC.constrain();
+        let mut flash = cx.device.FLASH.constrain();
+        let mut rcc = cx.device.RCC.constrain();
 
         // Freeze the configuration of all the clocks in the system and store the frozen frequencies
         // in `clocks`
@@ -90,12 +98,12 @@ const APP: () = {
 
         assert!(clocks.usbclk_valid());
 
-        let mut afio = device.AFIO.constrain(&mut rcc.apb2);
+        let mut afio = cx.device.AFIO.constrain(&mut rcc.apb2);
 
         // Acquire the GPIO peripherals
-        let mut gpioa = device.GPIOA.split(&mut rcc.apb2);
-        let mut gpiob = device.GPIOB.split(&mut rcc.apb2);
-        let mut gpioc = device.GPIOC.split(&mut rcc.apb2);
+        let mut gpioa = cx.device.GPIOA.split(&mut rcc.apb2);
+        let mut gpiob = cx.device.GPIOB.split(&mut rcc.apb2);
+        let mut gpioc = cx.device.GPIOC.split(&mut rcc.apb2);
 
         // Declare LED GPIOs
         let led_hs_en_l = gpioa
@@ -205,7 +213,7 @@ const APP: () = {
         let usb_dm = gpioa.pa11;
         let usb_dp = gpioa.pa12;
 
-        *USB_BUS = Some(UsbBus::new(device.USB, (usb_dm, usb_dp)));
+        *USB_BUS = Some(UsbBus::new(cx.device.USB, (usb_dm, usb_dp)));
 
         let midi = usb_midi::MidiClass::new(USB_BUS.as_ref().unwrap());
 
@@ -218,12 +226,12 @@ const APP: () = {
         let button_delay = AsmDelay::new(bitrate::U32BitrateExt::mhz(72));
         let encoder_delay = AsmDelay::new(bitrate::U32BitrateExt::mhz(72));
 
-        spawn.led_bank().unwrap();
-        spawn.enc().unwrap();
-        spawn.enc_eval().unwrap();
-        spawn.button().unwrap();
+        cx.spawn.led_bank().unwrap();
+        cx.spawn.enc().unwrap();
+        cx.spawn.enc_eval().unwrap();
+        cx.spawn.button().unwrap();
 
-        init::LateResources {
+        init::LateResources{
             LEDS: Leds::new(led_pins),
             ENCODERS: Encoders::new(encoder_pins, encoder_delay),
             BUTTON_MATRIX: ButtonMatrix::new(button_pins, button_delay),
@@ -237,13 +245,13 @@ const APP: () = {
     }
 
     #[idle(resources = [BUTTON_EVENT_C, ENCODER_POSITIONS, ENCODER_PARAMETER_TYPE, LEDS, MIDI, DEBUG_PIN_PA9])]
-    fn idle() -> ! {
+    fn idle(mut cx: idle::Context) -> ! {
         let parameter_led_event = LedEvent::new(
             ButtonType::Parameter(ParameterType::Volume),
             LedEventType::Switch(true),
         );
 
-        resources.LEDS.lock(|l| {
+        cx.resources.LEDS.lock(|l| {
             let banks = l.get_banks();
             l.set_banks(parameter_led_event.apply_to_banks(banks));
         });
@@ -253,14 +261,14 @@ const APP: () = {
 
         let master_led_event = LedEvent::new(ButtonType::Master(1), LedEventType::Switch(true));
 
-        resources.LEDS.lock(|l| {
+        cx.resources.LEDS.lock(|l| {
             let banks = l.get_banks();
             l.set_banks(master_led_event.apply_to_banks(banks));
         });
 
         loop {
             // Handle button events
-            if let Some(e) = resources.BUTTON_EVENT_C.dequeue() {
+            if let Some(e) = cx.resources.BUTTON_EVENT_C.dequeue() {
                 let on = match e.event {
                     ButtonEventEdge::NegEdge => false,
                     ButtonEventEdge::PosEdge => true,
@@ -276,13 +284,13 @@ const APP: () = {
                                 .unwrap()
                                 .to_bytes(),
                         };
-                        resources.MIDI.lock(|m| m.enqueue(midi));
-                        rtfm::pend(pac::Interrupt::USB_LP_CAN_RX0);
+                        cx.resources.MIDI.lock(|m| m.enqueue(midi));
+                        rtic::pend(pac::Interrupt::USB_LP_CAN_RX0);
                     }
                     ButtonType::Master(channel) => {
                         if on {
                             // switch MIDI channel for pads
-                            resources.LEDS.lock(|l| {
+                            cx.resources.LEDS.lock(|l| {
                                 for i in 0..6 {
                                     master_channel_leds[master_channel as usize - 1][i] =
                                         l.get_bank_value(i);
@@ -311,7 +319,7 @@ const APP: () = {
                     ButtonType::Parameter(param) => {
                         if on {
                             let encoder_parameter_type =
-                                resources.ENCODER_PARAMETER_TYPE.lock(|ept| *ept);
+                                cx.resources.ENCODER_PARAMETER_TYPE.lock(|ept| *ept);
 
                             let parameter_off_event = LedEvent::new(
                                 ButtonType::Parameter(encoder_parameter_type),
@@ -320,11 +328,11 @@ const APP: () = {
                             let parameter_on_event =
                                 LedEvent::new(e.btn, LedEventType::Switch(true));
 
-                            resources.ENCODER_PARAMETER_TYPE.lock(|ept| {
+                            cx.resources.ENCODER_PARAMETER_TYPE.lock(|ept| {
                                 *ept = param;
                             });
 
-                            resources.LEDS.lock(|l| {
+                            cx.resources.LEDS.lock(|l| {
                                 let mut banks = l.get_banks();
                                 banks = parameter_off_event.apply_to_banks(banks);
                                 banks = parameter_on_event.apply_to_banks(banks);
@@ -338,8 +346,8 @@ const APP: () = {
                             false => NoteOff::new(8, dir as u8).unwrap().to_bytes(),
                         };
 
-                        resources.MIDI.lock(|m| m.enqueue(midi));
-                        rtfm::pend(pac::Interrupt::USB_LP_CAN_RX0);
+                        cx.resources.MIDI.lock(|m| m.enqueue(midi));
+                        rtic::pend(pac::Interrupt::USB_LP_CAN_RX0);
                     }
                     ButtonType::Mode(mode) => {
                         let midi = match on {
@@ -347,14 +355,14 @@ const APP: () = {
                             false => NoteOff::new(9, mode as u8).unwrap().to_bytes(),
                         };
 
-                        resources.MIDI.lock(|m| m.enqueue(midi));
-                        rtfm::pend(pac::Interrupt::USB_LP_CAN_RX0);
+                        cx.resources.MIDI.lock(|m| m.enqueue(midi));
+                        rtic::pend(pac::Interrupt::USB_LP_CAN_RX0);
                     }
                 };
             }
 
             // Handle MIDI messages
-            let message = resources.MIDI.lock(|m| m.dequeue());
+            let message = cx.resources.MIDI.lock(|m| m.dequeue());
 
             if let Some(b) = message {
                 let mut led_event = None;
@@ -451,7 +459,7 @@ const APP: () = {
 
                 if let Some(le) = led_event {
                     if channel == master_channel {
-                        resources.LEDS.lock(|l| {
+                        cx.resources.LEDS.lock(|l| {
                             let banks = l.get_banks();
                             l.set_banks(le.apply_to_banks(banks));
                         });
@@ -465,35 +473,35 @@ const APP: () = {
     }
 
     #[task(priority = 3, schedule = [led_bank], resources = [LEDS])]
-    fn led_bank() {
-        resources.LEDS.write_next_bank();
+    fn led_bank(cx: led_bank::Context) {
+        cx.resources.LEDS.write_next_bank();
 
-        schedule
-            .led_bank(scheduled + LED_BANK_PERIOD.cycles())
+        cx.schedule
+            .led_bank(cx.scheduled + LED_BANK_PERIOD.cycles())
             .unwrap();
     }
 
     #[task(priority = 2, schedule = [enc], resources = [ENCODERS, ENCODER_POSITIONS, DEBUG_PIN_PA10])]
-    fn enc() {
-        resources.DEBUG_PIN_PA10.set_high();
+    fn enc(cx: enc::Context) {
+        cx.resources.DEBUG_PIN_PA10.set_high();
 
-        let change = resources.ENCODERS.read();
+        let change = cx.resources.ENCODERS.read();
 
         if change {
-            *resources.ENCODER_POSITIONS = resources.ENCODERS.get_positions();
+            *cx.resources.ENCODER_POSITIONS = cx.resources.ENCODERS.get_positions();
         }
 
-        schedule
-            .enc(scheduled + ENC_CAPTURE_PERIOD.cycles())
+        cx.schedule
+            .enc(cx.scheduled + ENC_CAPTURE_PERIOD.cycles())
             .unwrap();
 
-        resources.DEBUG_PIN_PA10.set_low();
+        cx.resources.DEBUG_PIN_PA10.set_low();
     }
 
     #[task(schedule = [enc_eval], resources = [ENCODER_POSITIONS, PREV_ENCODER_POSITIONS, ENCODER_PARAMETER_TYPE, MIDI])]
-    fn enc_eval() {
-        let new_encoder_positions = resources.ENCODER_POSITIONS.lock(|&mut p| p);
-        let encoder_positions = *resources.PREV_ENCODER_POSITIONS;
+    fn enc_eval(mut cx: enc_eval::Context) {
+        let new_encoder_positions = cx.resources.ENCODER_POSITIONS.lock(|&mut p| p);
+        let encoder_positions = *cx.resources.PREV_ENCODER_POSITIONS;
 
         // Handle encoder changes
         if new_encoder_positions != encoder_positions {
@@ -513,35 +521,35 @@ const APP: () = {
                     };
 
                     let midi = ControlChange::new(
-                        *resources.ENCODER_PARAMETER_TYPE as u8,
+                        *cx.resources.ENCODER_PARAMETER_TYPE as u8,
                         i as u8 + 1,
                         value,
                     )
                     .unwrap()
                     .to_bytes();
-                    resources.MIDI.lock(|m| m.enqueue(midi));
-                    rtfm::pend(pac::Interrupt::USB_LP_CAN_RX0);
+                    cx.resources.MIDI.enqueue(midi);
+                    rtic::pend(pac::Interrupt::USB_LP_CAN_RX0);
                 }
             }
-            *resources.PREV_ENCODER_POSITIONS = new_encoder_positions;
+            *cx.resources.PREV_ENCODER_POSITIONS = new_encoder_positions;
         }
 
-        schedule
-            .enc_eval(scheduled + ENC_EVAL_PERIOD.cycles())
+        cx.schedule
+            .enc_eval(cx.scheduled + ENC_EVAL_PERIOD.cycles())
             .unwrap();
     }
 
     #[task(priority = 2, schedule = [button], resources = [BUTTON_MATRIX, PREV_BUTTON_STATE, BUTTON_EVENT_P])]
-    fn button() {
-        resources.BUTTON_MATRIX.read();
+    fn button(cx: button::Context) {
+        cx.resources.BUTTON_MATRIX.read();
 
-        let deb_rows = resources.BUTTON_MATRIX.get_debounced_rows();
+        let deb_rows = cx.resources.BUTTON_MATRIX.get_debounced_rows();
 
-        if deb_rows != *resources.PREV_BUTTON_STATE {
+        if deb_rows != *cx.resources.PREV_BUTTON_STATE {
             for col in 0..11 {
                 for row in 0..8 {
                     let edge = match (
-                        ((resources.PREV_BUTTON_STATE[col] >> row) & 1),
+                        ((cx.resources.PREV_BUTTON_STATE[col] >> row) & 1),
                         ((deb_rows[col] >> row) & 1),
                     ) {
                         (0, 1) => Some(PosEdge),
@@ -550,29 +558,29 @@ const APP: () = {
                     };
 
                     if let Some(e) = edge {
-                        resources
+                        cx.resources
                             .BUTTON_EVENT_P
                             .enqueue(ButtonEvent::new(row, col as u8, e));
                     }
                 }
             }
 
-            *resources.PREV_BUTTON_STATE = deb_rows;
+            *cx.resources.PREV_BUTTON_STATE = deb_rows;
         }
 
-        schedule
-            .button(scheduled + BUTTON_COL_PERIOD.cycles())
+        cx.schedule
+            .button(cx.scheduled + BUTTON_COL_PERIOD.cycles())
             .unwrap();
     }
 
-    #[interrupt(resources = [USB_DEV, MIDI])]
-    fn USB_HP_CAN_TX() {
-        usb_poll(&mut resources.USB_DEV, &mut resources.MIDI);
+    #[task(binds = USB_HP_CAN_TX, resources = [USB_DEV, MIDI])]
+    fn usb_hp_can_tx(mut cx: usb_hp_can_tx::Context) {
+        usb_poll(&mut cx.resources.USB_DEV, &mut cx.resources.MIDI);
     }
 
-    #[interrupt(resources = [USB_DEV, MIDI])]
-    fn USB_LP_CAN_RX0() {
-        usb_poll(&mut resources.USB_DEV, &mut resources.MIDI);
+    #[task(binds = USB_LP_CAN_RX0, resources = [USB_DEV, MIDI])]
+    fn usb_lp_can_rx0(mut cx: usb_lp_can_rx0::Context) {
+        usb_poll(&mut cx.resources.USB_DEV, &mut cx.resources.MIDI);
     }
 
     extern "C" {

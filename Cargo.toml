@@ -14,7 +14,7 @@ cargo-features = ["profile-overrides"] # +
 
 [package]
 name = "open-cleverpad"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["DerFetzer <kontakt@der-fetzer.de>"]
 edition = "2018"
 
@@ -47,11 +47,8 @@ features = ["const-fn"]
 version = "0.6.10"
 features = ["device"]
 
-[dependencies.cortex-m-rtfm]
-version = "0.4.3"
-features = ["timer-queue", "nightly"]
-# To be able to use "nightly" feature you might have to add "maybe_uninit_extra" feature gate to this dependencies
-# source code.
+[dependencies.cortex-m-rtic]
+version = "0.5.3"
 
 [dependencies.cortex-m-semihosting]
 version = "0.3.3"

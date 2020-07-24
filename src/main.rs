@@ -7,15 +7,15 @@
 #[allow(unused_imports)]
 use panic_semihosting;
 
-use rtic::cyccnt::{U32Ext};
+use rtic::cyccnt::U32Ext;
 
-use asm_delay::{AsmDelay, bitrate};
+use asm_delay::{bitrate, AsmDelay};
 
 use embedded_hal::digital::v2::OutputPin;
 
 use stm32f1xx_hal::{
-    gpio::*,
     gpio::gpioa::*,
+    gpio::*,
     pac,
     prelude::*,
     usb::{Peripheral, UsbBus, UsbBusType},
@@ -29,8 +29,8 @@ use usb_device::prelude::*;
 
 use crate::hal::ButtonEventEdge::{NegEdge, PosEdge};
 use crate::hal::{
-    ButtonEvent, ButtonEventEdge, ButtonType, LedColor, LedEvent, LedEventType,
-    ParameterType, DIRECTION_TYPES, MODE_TYPES,
+    ButtonEvent, ButtonEventEdge, ButtonType, LedColor, LedEvent, LedEventType, ParameterType,
+    DIRECTION_TYPES, MODE_TYPES,
 };
 use core::cmp::min;
 use heapless::consts::*;
@@ -66,13 +66,13 @@ const APP: () = {
         ENCODER_PARAMETER_TYPE: ParameterType,
         #[init([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])]
         PREV_BUTTON_STATE: [u8; 11],
-    
+
         USB_DEV: UsbDevice<'static, UsbBusType>,
         MIDI: usb_midi::MidiClass<'static, UsbBusType>,
-    
+
         BUTTON_EVENT_P: Producer<'static, ButtonEvent, U16>,
         BUTTON_EVENT_C: Consumer<'static, ButtonEvent, U16>,
-    
+
         DEBUG_PIN_PA9: PA9<Output<PushPull>>,
         DEBUG_PIN_PA10: PA10<Output<PushPull>>,
     }
@@ -173,12 +173,8 @@ const APP: () = {
             col3: gpiob
                 .pb2
                 .into_open_drain_output_with_state(&mut gpiob.crl, State::High),
-            col4:
-                pb3
-                .into_open_drain_output_with_state(&mut gpiob.crl, State::High),
-            col5:
-                pb4
-                .into_open_drain_output_with_state(&mut gpiob.crl, State::High),
+            col4: pb3.into_open_drain_output_with_state(&mut gpiob.crl, State::High),
+            col5: pb4.into_open_drain_output_with_state(&mut gpiob.crl, State::High),
             col6: gpiob
                 .pb5
                 .into_open_drain_output_with_state(&mut gpiob.crl, State::High),
@@ -239,7 +235,7 @@ const APP: () = {
         cx.spawn.enc_eval().unwrap();
         cx.spawn.button().unwrap();
 
-        init::LateResources{
+        init::LateResources {
             LEDS: Leds::new(led_pins),
             ENCODERS: Encoders::new(encoder_pins, encoder_delay),
             BUTTON_MATRIX: ButtonMatrix::new(button_pins, button_delay),

@@ -34,11 +34,11 @@ codegen-units = 1
 opt-level = "z"
 
 [dependencies.stm32f1xx-hal]
-version = "0.3.0"
-features = ["stm32f103", "rt"]
+version = "0.6.1"
+features = ["stm32f103", "medium", "rt", "stm32-usbd"]
 
 [dependencies.cortex-m]
-version = "0.6.0"
+version = "0.6.3"
 # "inline-asm" optimizes away AsmDelay in release mode
 #features = ["inline-asm", "const-fn"]
 features = ["const-fn"]
@@ -54,12 +54,12 @@ version = "0.5.3"
 version = "0.3.3"
 
 [dependencies.panic-semihosting]
-version = "0.5.2"
+version = "0.5.3"
 
 [dependencies]
-asm-delay = "0.7.0"
-bitrate = "0.1.1"
+asm-delay = "0.7.2"
+embedded-hal = "0.2.4"
 panic-halt = "0.2.0"
-usb-device = "0.2.2"
-stm32-usbd = { version = "0.3", features = ["stm32f103xx"] }
-heapless = "0.5.0"
+usb-device = "0.2.5"
+stm32-usbd = { version = "0.5.1", features = ["ram_access_1x16"] }
+heapless = "0.5.5"

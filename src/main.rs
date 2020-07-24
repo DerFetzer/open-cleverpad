@@ -7,27 +7,29 @@
 #[allow(unused_imports)]
 use panic_semihosting;
 
-use rtic::cyccnt::{Instant, U32Ext};
+use rtic::cyccnt::{U32Ext};
 
 use asm_delay::{AsmDelay, bitrate};
 
-use stm32f1xx_hal::gpio::gpioa::{PA10, PA9};
-use stm32f1xx_hal::gpio::State::High;
-use stm32f1xx_hal::gpio::{Output, PushPull};
-use stm32f1xx_hal::pac;
-use stm32f1xx_hal::prelude::*;
+use embedded_hal::digital::v2::OutputPin;
+
+use stm32f1xx_hal::{
+    gpio::*,
+    gpio::gpioa::*,
+    pac,
+    prelude::*,
+    usb::{Peripheral, UsbBus, UsbBusType},
+};
 
 use crate::hardware::{ButtonMatrix, ButtonMatrixPins, EncoderPins, Encoders, LedPins, Leds};
 use crate::midi::{ControlChange, MidiMessage, NoteOff, NoteOn};
-
-use stm32_usbd::{UsbBus, UsbBusType};
 
 use usb_device::bus;
 use usb_device::prelude::*;
 
 use crate::hal::ButtonEventEdge::{NegEdge, PosEdge};
 use crate::hal::{
-    ButtonEvent, ButtonEventEdge, ButtonType, Direction, LedColor, LedEvent, LedEventType,
+    ButtonEvent, ButtonEventEdge, ButtonType, LedColor, LedEvent, LedEventType,
     ParameterType, DIRECTION_TYPES, MODE_TYPES,
 };
 use core::cmp::min;
@@ -108,14 +110,14 @@ const APP: () = {
         // Declare LED GPIOs
         let led_hs_en_l = gpioa
             .pa2
-            .into_push_pull_output_with_state(&mut gpioa.crl, High);
+            .into_push_pull_output_with_state(&mut gpioa.crl, State::High);
         let led_hs_a0 = gpioa.pa3.into_push_pull_output(&mut gpioa.crl);
         let led_hs_a1 = gpioa.pa4.into_push_pull_output(&mut gpioa.crl);
         let led_hs_a2 = gpioa.pa5.into_push_pull_output(&mut gpioa.crl);
 
         let led_ls_en_l = gpiob
             .pb12
-            .into_push_pull_output_with_state(&mut gpiob.crh, High);
+            .into_push_pull_output_with_state(&mut gpiob.crh, State::High);
         let led_ls_dai = gpiob.pb15.into_push_pull_output(&mut gpiob.crh);
         let led_ls_dck = gpiob.pb14.into_push_pull_output(&mut gpiob.crh);
         let led_ls_lat = gpiob.pb13.into_push_pull_output(&mut gpiob.crh);
@@ -151,7 +153,7 @@ const APP: () = {
         // Declare button matrix GPIOs
 
         // Disable JTAG ports
-        afio.mapr.disable_jtag();
+        let (_, pb3, pb4) = afio.mapr.disable_jtag(gpioa.pa15, gpiob.pb3, gpiob.pb4);
 
         let button_pins = ButtonMatrixPins {
             row1: gpioc.pc8,
@@ -164,37 +166,37 @@ const APP: () = {
             row8: gpioc.pc15,
             col1: gpiob
                 .pb0
-                .into_open_drain_output_with_state(&mut gpiob.crl, High),
+                .into_open_drain_output_with_state(&mut gpiob.crl, State::High),
             col2: gpiob
                 .pb1
-                .into_open_drain_output_with_state(&mut gpiob.crl, High),
+                .into_open_drain_output_with_state(&mut gpiob.crl, State::High),
             col3: gpiob
                 .pb2
-                .into_open_drain_output_with_state(&mut gpiob.crl, High),
-            col4: gpiob
-                .pb3
-                .into_open_drain_output_with_state(&mut gpiob.crl, High),
-            col5: gpiob
-                .pb4
-                .into_open_drain_output_with_state(&mut gpiob.crl, High),
+                .into_open_drain_output_with_state(&mut gpiob.crl, State::High),
+            col4:
+                pb3
+                .into_open_drain_output_with_state(&mut gpiob.crl, State::High),
+            col5:
+                pb4
+                .into_open_drain_output_with_state(&mut gpiob.crl, State::High),
             col6: gpiob
                 .pb5
-                .into_open_drain_output_with_state(&mut gpiob.crl, High),
+                .into_open_drain_output_with_state(&mut gpiob.crl, State::High),
             col7: gpiob
                 .pb6
-                .into_open_drain_output_with_state(&mut gpiob.crl, High),
+                .into_open_drain_output_with_state(&mut gpiob.crl, State::High),
             col8: gpiob
                 .pb7
-                .into_open_drain_output_with_state(&mut gpiob.crl, High),
+                .into_open_drain_output_with_state(&mut gpiob.crl, State::High),
             col9: gpiob
                 .pb8
-                .into_open_drain_output_with_state(&mut gpiob.crh, High),
+                .into_open_drain_output_with_state(&mut gpiob.crh, State::High),
             col10: gpiob
                 .pb9
-                .into_open_drain_output_with_state(&mut gpiob.crh, High),
+                .into_open_drain_output_with_state(&mut gpiob.crh, State::High),
             col11: gpiob
                 .pb10
-                .into_open_drain_output_with_state(&mut gpiob.crh, High),
+                .into_open_drain_output_with_state(&mut gpiob.crh, State::High),
         };
 
         // Declare Debug-GPIOs
@@ -208,12 +210,18 @@ const APP: () = {
         // USB
         let _usb_pullup = gpioa
             .pa8
-            .into_push_pull_output_with_state(&mut gpioa.crh, High);
+            .into_push_pull_output_with_state(&mut gpioa.crh, State::High);
 
         let usb_dm = gpioa.pa11;
         let usb_dp = gpioa.pa12;
 
-        *USB_BUS = Some(UsbBus::new(cx.device.USB, (usb_dm, usb_dp)));
+        let usb = Peripheral {
+            usb: cx.device.USB,
+            pin_dm: usb_dm,
+            pin_dp: usb_dp,
+        };
+
+        *USB_BUS = Some(UsbBus::new(usb));
 
         let midi = usb_midi::MidiClass::new(USB_BUS.as_ref().unwrap());
 
@@ -483,7 +491,7 @@ const APP: () = {
 
     #[task(priority = 2, schedule = [enc], resources = [ENCODERS, ENCODER_POSITIONS, DEBUG_PIN_PA10])]
     fn enc(cx: enc::Context) {
-        cx.resources.DEBUG_PIN_PA10.set_high();
+        cx.resources.DEBUG_PIN_PA10.set_high().unwrap();
 
         let change = cx.resources.ENCODERS.read();
 
@@ -495,7 +503,7 @@ const APP: () = {
             .enc(cx.scheduled + ENC_CAPTURE_PERIOD.cycles())
             .unwrap();
 
-        cx.resources.DEBUG_PIN_PA10.set_low();
+        cx.resources.DEBUG_PIN_PA10.set_low().unwrap();
     }
 
     #[task(schedule = [enc_eval], resources = [ENCODER_POSITIONS, PREV_ENCODER_POSITIONS, ENCODER_PARAMETER_TYPE, MIDI])]

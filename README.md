@@ -3,6 +3,7 @@
 > An open firmware for [MIDIPLUS SmartPAD][smartpad] (being a pretty cheap launchpad-like MIDI-controller)
 
 This project is developed and maintained by [DerFetzer][team].
+Feature and pull requests are very welcome!
 
 ## Documentation
 

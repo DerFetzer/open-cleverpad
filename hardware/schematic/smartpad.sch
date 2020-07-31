@@ -1,6 +1,5 @@
 EESchema Schematic File Version 4
-LIBS:smartpad-cache
-EELAYER 29 0
+EELAYER 30 0
 EELAYER END
 $Descr A4 11693 8268
 encoding utf-8
@@ -801,17 +800,6 @@ F 3 "" H 4100 1150 50  0001 C CNN
 	1    4100 1150
 	0    -1   -1   0   
 $EndComp
-$Comp
-L power:+3.3V #PWR0120
-U 1 1 5D318EF6
-P 9050 1450
-F 0 "#PWR0120" H 9050 1300 50  0001 C CNN
-F 1 "+3.3V" V 9065 1578 50  0000 L CNN
-F 2 "" H 9050 1450 50  0001 C CNN
-F 3 "" H 9050 1450 50  0001 C CNN
-	1    9050 1450
-	0    -1   -1   0   
-$EndComp
 Wire Wire Line
 	8650 1150 8650 1600
 Wire Wire Line
@@ -1278,8 +1266,14 @@ F 3 "~" H 7000 3700 50  0001 C CNN
 	1    6800 3700
 	0    1    1    0   
 $EndComp
-Wire Bus Line
-	5400 950  5400 1750
 Text Notes 8150 3850 0    50   ~ 0
 LED driver output routing is yet to be inspected
+Text Label 5200 2200 0    50   ~ 0
+NRST
+Wire Wire Line
+	9050 1450 8850 1450
+Wire Bus Line
+	5400 950  5400 1750
+Text Label 8850 1450 0    50   ~ 0
+NRST
 $EndSCHEMATC

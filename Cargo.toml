@@ -37,8 +37,7 @@ features = ["stm32f103", "medium", "rt", "stm32-usbd"]
 
 [dependencies.cortex-m]
 version = "0.7.5"
-# "inline-asm" optimizes away AsmDelay in release mode
-#features = ["inline-asm"]
+features = ["inline-asm"]
 
 [dependencies.cortex-m-rt]
 version = "0.7.1"

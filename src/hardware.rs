@@ -47,8 +47,8 @@ impl ButtonMatrix {
     pub fn get_debounced_rows(&mut self) -> [u8; 11] {
         let mut debounced_rows = [0_u8; 11];
 
-        for i in 0..11 {
-            debounced_rows[i] = self.rows_neg2[i] & self.rows_neg1[i] & self.rows[i]
+        for (i, row) in debounced_rows.iter_mut().enumerate() {
+            *row = self.rows_neg2[i] & self.rows_neg1[i] & self.rows[i]
         }
 
         debounced_rows
@@ -76,7 +76,7 @@ impl ButtonMatrix {
             self.delay.delay_us(10_u32);
 
             let mut row: u8 = 0;
-            row |= (self.pins.row1.is_low().unwrap() as u8) << 0;
+            row |= self.pins.row1.is_low().unwrap() as u8;
             row |= (self.pins.row2.is_low().unwrap() as u8) << 1;
             row |= (self.pins.row3.is_low().unwrap() as u8) << 2;
             row |= (self.pins.row4.is_low().unwrap() as u8) << 3;

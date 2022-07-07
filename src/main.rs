@@ -4,8 +4,7 @@
 #![no_std]
 #![allow(non_snake_case)]
 
-#[allow(unused_imports)]
-use panic_semihosting;
+use panic_semihosting as _;
 
 use rtic::cyccnt::U32Ext;
 
@@ -288,7 +287,7 @@ const APP: () = {
                                 .unwrap()
                                 .to_bytes(),
                         };
-                        cx.resources.MIDI.lock(|m| m.enqueue(midi));
+                        cx.resources.MIDI.lock(|m| m.enqueue(midi).unwrap());
                         rtic::pend(pac::Interrupt::USB_LP_CAN_RX0);
                     }
                     ButtonType::Master(channel) => {
@@ -350,7 +349,7 @@ const APP: () = {
                             false => NoteOff::new(8, dir as u8).unwrap().to_bytes(),
                         };
 
-                        cx.resources.MIDI.lock(|m| m.enqueue(midi));
+                        cx.resources.MIDI.lock(|m| m.enqueue(midi).unwrap());
                         rtic::pend(pac::Interrupt::USB_LP_CAN_RX0);
                     }
                     ButtonType::Mode(mode) => {
@@ -359,7 +358,7 @@ const APP: () = {
                             false => NoteOff::new(9, mode as u8).unwrap().to_bytes(),
                         };
 
-                        cx.resources.MIDI.lock(|m| m.enqueue(midi));
+                        cx.resources.MIDI.lock(|m| m.enqueue(midi).unwrap());
                         rtic::pend(pac::Interrupt::USB_LP_CAN_RX0);
                     }
                 };
@@ -531,7 +530,7 @@ const APP: () = {
                     )
                     .unwrap()
                     .to_bytes();
-                    cx.resources.MIDI.enqueue(midi);
+                    cx.resources.MIDI.enqueue(midi).unwrap();
                     rtic::pend(pac::Interrupt::USB_LP_CAN_RX0);
                 }
             }
@@ -550,11 +549,11 @@ const APP: () = {
         let deb_rows = cx.resources.BUTTON_MATRIX.get_debounced_rows();
 
         if deb_rows != *cx.resources.PREV_BUTTON_STATE {
-            for col in 0..11 {
+            for (col, deb_row) in deb_rows.iter().enumerate() {
                 for row in 0..8 {
                     let edge = match (
                         ((cx.resources.PREV_BUTTON_STATE[col] >> row) & 1),
-                        ((deb_rows[col] >> row) & 1),
+                        ((deb_row >> row) & 1),
                     ) {
                         (0, 1) => Some(PosEdge),
                         (1, 0) => Some(NegEdge),
@@ -564,7 +563,8 @@ const APP: () = {
                     if let Some(e) = edge {
                         cx.resources
                             .BUTTON_EVENT_P
-                            .enqueue(ButtonEvent::new(row, col as u8, e));
+                            .enqueue(ButtonEvent::new(row, col as u8, e))
+                            .unwrap();
                     }
                 }
             }
@@ -578,13 +578,13 @@ const APP: () = {
     }
 
     #[task(binds = USB_HP_CAN_TX, resources = [USB_DEV, MIDI])]
-    fn usb_hp_can_tx(mut cx: usb_hp_can_tx::Context) {
-        usb_poll(&mut cx.resources.USB_DEV, &mut cx.resources.MIDI);
+    fn usb_hp_can_tx(cx: usb_hp_can_tx::Context) {
+        usb_poll(cx.resources.USB_DEV, cx.resources.MIDI);
     }
 
     #[task(binds = USB_LP_CAN_RX0, resources = [USB_DEV, MIDI])]
-    fn usb_lp_can_rx0(mut cx: usb_lp_can_rx0::Context) {
-        usb_poll(&mut cx.resources.USB_DEV, &mut cx.resources.MIDI);
+    fn usb_lp_can_rx0(cx: usb_lp_can_rx0::Context) {
+        usb_poll(cx.resources.USB_DEV, cx.resources.MIDI);
     }
 
     extern "C" {
@@ -599,15 +599,12 @@ fn usb_poll<B: bus::UsbBus>(
     midi: &mut usb_midi::MidiClass<'static, B>,
 ) -> bool {
     if !midi.write_queue_is_empty() {
-        midi.write_queue_to_host();
+        midi.write_queue_to_host().unwrap();
     }
 
     if !usb_dev.poll(&mut [midi]) {
         return false;
     }
 
-    match midi.read_to_queue() {
-        Ok(len) if len > 0 => true,
-        _ => false,
-    }
+    matches!(midi.read_to_queue(), Ok(len) if len > 0)
 }

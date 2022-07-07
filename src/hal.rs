@@ -119,7 +119,7 @@ pub enum LedColor {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct RGB {
+pub struct Rgb {
     pub r: bool,
     pub g: bool,
     pub b: bool,
@@ -139,44 +139,44 @@ impl LedColor {
         }
     }
 
-    pub fn to_rgb(&self) -> RGB {
+    pub fn as_rgb(&self) -> Rgb {
         match self {
-            LedColor::Black => RGB {
+            LedColor::Black => Rgb {
                 r: false,
                 g: false,
                 b: false,
             },
-            LedColor::White => RGB {
+            LedColor::White => Rgb {
                 r: true,
                 g: true,
                 b: true,
             },
-            LedColor::Yellow => RGB {
+            LedColor::Yellow => Rgb {
                 r: true,
                 g: true,
                 b: false,
             },
-            LedColor::Aqua => RGB {
+            LedColor::Aqua => Rgb {
                 r: false,
                 g: true,
                 b: true,
             },
-            LedColor::Purple => RGB {
+            LedColor::Purple => Rgb {
                 r: true,
                 g: false,
                 b: true,
             },
-            LedColor::Blue => RGB {
+            LedColor::Blue => Rgb {
                 r: false,
                 g: false,
                 b: true,
             },
-            LedColor::Green => RGB {
+            LedColor::Green => Rgb {
                 r: false,
                 g: true,
                 b: false,
             },
-            LedColor::Red => RGB {
+            LedColor::Red => Rgb {
                 r: true,
                 g: false,
                 b: false,
@@ -239,27 +239,24 @@ impl LedEvent {
 
                 let bit = 31 - (((y % 4) * 8) + x);
 
-                match color.to_rgb() {
-                    RGB { r, g, b } => {
-                        if r {
-                            new_banks[bank_r] |= 1 << bit;
-                        } else {
-                            new_banks[bank_r] &= !(1 << bit);
-                        }
+                let Rgb { r, g, b } = color.as_rgb();
+                if r {
+                    new_banks[bank_r] |= 1 << bit;
+                } else {
+                    new_banks[bank_r] &= !(1 << bit);
+                }
 
-                        if g {
-                            new_banks[bank_g] |= 1 << bit;
-                        } else {
-                            new_banks[bank_g] &= !(1 << bit);
-                        }
+                if g {
+                    new_banks[bank_g] |= 1 << bit;
+                } else {
+                    new_banks[bank_g] &= !(1 << bit);
+                }
 
-                        if b {
-                            new_banks[bank_b] |= 1 << bit;
-                        } else {
-                            new_banks[bank_b] &= !(1 << bit);
-                        }
-                    }
-                };
+                if b {
+                    new_banks[bank_b] |= 1 << bit;
+                } else {
+                    new_banks[bank_b] &= !(1 << bit);
+                }
             }
             _ => panic!("Invalid LED and button types!"),
         };

@@ -10,8 +10,6 @@
 # editing this file be aware that the upstream Cargo.toml
 # will likely look very different (and much more reasonable)
 
-cargo-features = ["profile-overrides"] # +
-
 [package]
 name = "open-cleverpad"
 version = "0.2.1"
@@ -29,7 +27,7 @@ lto = true
 codegen-units = 1
 debug = true
 
-[profile.dev.overrides."*"]
+[profile.dev]
 codegen-units = 1
 opt-level = "z"
 

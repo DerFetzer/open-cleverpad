@@ -1,5 +1,5 @@
 use core::borrow::Borrow;
-use heapless::{consts::*, spsc::Queue};
+use heapless::spsc::Queue;
 use usb_device::class_prelude::*;
 
 pub const USB_CLASS_AUDIO: u8 = 0x01;
@@ -21,8 +21,8 @@ pub struct MidiClass<'a, B: UsbBus> {
     ms_if: InterfaceNumber,
     read_ep: EndpointOut<'a, B>,
     write_ep: EndpointIn<'a, B>,
-    read_queue: Queue<[u8; 4], U64, u8>,
-    write_queue: Queue<[u8; 4], U16, u8>,
+    read_queue: Queue<[u8; 4], 64>,
+    write_queue: Queue<[u8; 4], 16>,
     need_zlp: bool,
 }
 
@@ -33,8 +33,8 @@ impl<'a, B: UsbBus> MidiClass<'a, B> {
             ms_if: alloc.interface(),
             read_ep: alloc.bulk(64),
             write_ep: alloc.bulk(64),
-            read_queue: Queue::u8(),
-            write_queue: Queue::u8(),
+            read_queue: Queue::new(),
+            write_queue: Queue::new(),
             need_zlp: false,
         }
     }

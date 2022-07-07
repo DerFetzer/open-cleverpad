@@ -1,122 +1,121 @@
-#![deny(unsafe_code)]
-//#![deny(warnings)]
+#![deny(warnings)]
 #![no_main]
 #![no_std]
 #![allow(non_snake_case)]
 
 use panic_semihosting as _;
 
-use rtic::cyccnt::U32Ext;
-
-use asm_delay::{bitrate, AsmDelay};
-
-use embedded_hal::digital::v2::OutputPin;
-
-use stm32f1xx_hal::{
-    gpio::gpioa::*,
-    gpio::*,
-    pac,
-    prelude::*,
-    usb::{Peripheral, UsbBus, UsbBusType},
-};
-
-use crate::hardware::{ButtonMatrix, ButtonMatrixPins, EncoderPins, Encoders, LedPins, Leds};
-use crate::midi::{ControlChange, MidiMessage, NoteOff, NoteOn};
-
-use usb_device::bus;
-use usb_device::prelude::*;
-
-use crate::hal::ButtonEventEdge::{NegEdge, PosEdge};
-use crate::hal::{
-    ButtonEvent, ButtonEventEdge, ButtonType, LedColor, LedEvent, LedEventType, ParameterType,
-    DIRECTION_TYPES, MODE_TYPES,
-};
-use core::cmp::min;
-use heapless::consts::*;
-use heapless::spsc::{Consumer, Producer, Queue};
-
 mod hal;
 mod hardware;
 mod midi;
 mod usb_midi;
 
-// SYSCLK = 72MHz --> clock_period = 13.9ns
+#[rtic::app(device = stm32f1xx_hal::pac, peripherals = true, dispatchers = [EXTI1, EXTI2, EXTI3])]
+mod app {
+    use crate::hal::ButtonEventEdge::{NegEdge, PosEdge};
+    use crate::hal::{
+        ButtonEvent, ButtonEventEdge, ButtonType, LedColor, LedEvent, LedEventType, ParameterType,
+        DIRECTION_TYPES, MODE_TYPES,
+    };
+    use crate::hardware::{ButtonMatrix, ButtonMatrixPins, EncoderPins, Encoders, LedPins, Leds};
+    use crate::midi::{ControlChange, MidiMessage, NoteOff, NoteOn};
+    use crate::usb_midi;
+    use asm_delay::{bitrate, AsmDelay};
+    use core::cmp::min;
+    use dwt_systick_monotonic::DwtSystick;
+    use heapless::spsc::{Consumer, Producer, Queue};
+    use stm32f1xx_hal::pac::Peripherals;
+    use stm32f1xx_hal::{
+        gpio::gpioa::*,
+        gpio::*,
+        pac,
+        prelude::*,
+        usb::{Peripheral, UsbBus, UsbBusType},
+    };
+    use usb_device::bus;
+    use usb_device::prelude::*;
 
-const LED_BANK_PERIOD: u32 = 70_000; // ~1kHz
-const ENC_CAPTURE_PERIOD: u32 = 14_000; // ~5kHz
-const ENC_EVAL_PERIOD: u32 = 1_400_000; // ~50Hz
-const BUTTON_COL_PERIOD: u32 = 700_000; // ~.1kHz
+    #[monotonic(binds = SysTick, default = true)]
+    type MyMono = DwtSystick<72_000_000>;
 
-const VID: u16 = 0x1ACC;
-const PID: u16 = 0x3801;
+    const LED_BANK_PERIOD: u32 = 1_000; // ~1kHz
+    const ENC_CAPTURE_PERIOD: u32 = 200; // ~5kHz
+    const ENC_EVAL_PERIOD: u32 = 20_000; // ~50Hz
+    const BUTTON_COL_PERIOD: u32 = 10_000; // ~.1kHz
 
-#[rtic::app(device = stm32f1xx_hal::pac, monotonic = rtic::cyccnt::CYCCNT, peripherals = true)]
-const APP: () = {
-    struct Resources {
+    const VID: u16 = 0x1ACC;
+    const PID: u16 = 0x3801;
+
+    #[shared]
+    struct Shared {
         LEDS: Leds,
+        #[lock_free]
         ENCODERS: Encoders,
+        #[lock_free]
         BUTTON_MATRIX: ButtonMatrix,
-
-        #[init([0, 0, 0, 0, 0, 0, 0, 0])]
         ENCODER_POSITIONS: [i32; 8],
-        #[init([0, 0, 0, 0, 0, 0, 0, 0])]
+        #[lock_free]
         PREV_ENCODER_POSITIONS: [i32; 8],
-        #[init(ParameterType::Volume)]
         ENCODER_PARAMETER_TYPE: ParameterType,
-        #[init([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])]
+        #[lock_free]
         PREV_BUTTON_STATE: [u8; 11],
-
         USB_DEV: UsbDevice<'static, UsbBusType>,
         MIDI: usb_midi::MidiClass<'static, UsbBusType>,
-
-        BUTTON_EVENT_P: Producer<'static, ButtonEvent, U16>,
-        BUTTON_EVENT_C: Consumer<'static, ButtonEvent, U16>,
-
+        #[lock_free]
+        BUTTON_EVENT_P: Producer<'static, ButtonEvent, 16>,
+        #[lock_free]
+        BUTTON_EVENT_C: Consumer<'static, ButtonEvent, 16>,
         DEBUG_PIN_PA9: PA9<Output<PushPull>>,
+        #[lock_free]
         DEBUG_PIN_PA10: PA10<Output<PushPull>>,
     }
 
-    #[init(spawn = [led_bank, enc, enc_eval, button])]
-    fn init(mut cx: init::Context) -> init::LateResources {
-        static mut USB_BUS: Option<bus::UsbBusAllocator<UsbBusType>> = None;
-        static mut BUTTON_QUEUE: Option<Queue<ButtonEvent, U16>> = None;
+    #[local]
+    struct Local {}
 
-        cx.core.DWT.enable_cycle_counter();
+    #[init(local = [BUTTON_QUEUE: Queue<ButtonEvent, 16> = Queue::new()])]
+    fn init(cx: init::Context) -> (Shared, Local, init::Monotonics) {
+        static mut USB_BUS: Option<bus::UsbBusAllocator<UsbBusType>> = None;
+
+        let dp: Peripherals = cx.device;
+        let mut cp: rtic::export::Peripherals = cx.core;
+
+        cp.DWT.enable_cycle_counter();
 
         // Take ownership over the raw flash and rcc devices and convert them into the corresponding
         // HAL structs
-        let mut flash = cx.device.FLASH.constrain();
-        let mut rcc = cx.device.RCC.constrain();
+        let mut flash = dp.FLASH.constrain();
+        let rcc = dp.RCC.constrain();
 
         // Freeze the configuration of all the clocks in the system and store the frozen frequencies
         // in `clocks`
         let clocks = rcc
             .cfgr
-            .use_hse(8.mhz())
-            .sysclk(72.mhz())
-            .pclk1(36.mhz())
+            .use_hse(8.MHz())
+            .sysclk(72.MHz())
+            .pclk1(36.MHz())
             .freeze(&mut flash.acr);
 
         assert!(clocks.usbclk_valid());
 
-        let mut afio = cx.device.AFIO.constrain(&mut rcc.apb2);
+        let mut afio = dp.AFIO.constrain();
 
         // Acquire the GPIO peripherals
-        let mut gpioa = cx.device.GPIOA.split(&mut rcc.apb2);
-        let mut gpiob = cx.device.GPIOB.split(&mut rcc.apb2);
-        let mut gpioc = cx.device.GPIOC.split(&mut rcc.apb2);
+        let mut gpioa = dp.GPIOA.split();
+        let mut gpiob = dp.GPIOB.split();
+        let mut gpioc = dp.GPIOC.split();
 
         // Declare LED GPIOs
         let led_hs_en_l = gpioa
             .pa2
-            .into_push_pull_output_with_state(&mut gpioa.crl, State::High);
+            .into_push_pull_output_with_state(&mut gpioa.crl, PinState::High);
         let led_hs_a0 = gpioa.pa3.into_push_pull_output(&mut gpioa.crl);
         let led_hs_a1 = gpioa.pa4.into_push_pull_output(&mut gpioa.crl);
         let led_hs_a2 = gpioa.pa5.into_push_pull_output(&mut gpioa.crl);
 
         let led_ls_en_l = gpiob
             .pb12
-            .into_push_pull_output_with_state(&mut gpiob.crh, State::High);
+            .into_push_pull_output_with_state(&mut gpiob.crh, PinState::High);
         let led_ls_dai = gpiob.pb15.into_push_pull_output(&mut gpiob.crh);
         let led_ls_dck = gpiob.pb14.into_push_pull_output(&mut gpiob.crh);
         let led_ls_lat = gpiob.pb13.into_push_pull_output(&mut gpiob.crh);
@@ -165,33 +164,33 @@ const APP: () = {
             row8: gpioc.pc15,
             col1: gpiob
                 .pb0
-                .into_open_drain_output_with_state(&mut gpiob.crl, State::High),
+                .into_open_drain_output_with_state(&mut gpiob.crl, PinState::High),
             col2: gpiob
                 .pb1
-                .into_open_drain_output_with_state(&mut gpiob.crl, State::High),
+                .into_open_drain_output_with_state(&mut gpiob.crl, PinState::High),
             col3: gpiob
                 .pb2
-                .into_open_drain_output_with_state(&mut gpiob.crl, State::High),
-            col4: pb3.into_open_drain_output_with_state(&mut gpiob.crl, State::High),
-            col5: pb4.into_open_drain_output_with_state(&mut gpiob.crl, State::High),
+                .into_open_drain_output_with_state(&mut gpiob.crl, PinState::High),
+            col4: pb3.into_open_drain_output_with_state(&mut gpiob.crl, PinState::High),
+            col5: pb4.into_open_drain_output_with_state(&mut gpiob.crl, PinState::High),
             col6: gpiob
                 .pb5
-                .into_open_drain_output_with_state(&mut gpiob.crl, State::High),
+                .into_open_drain_output_with_state(&mut gpiob.crl, PinState::High),
             col7: gpiob
                 .pb6
-                .into_open_drain_output_with_state(&mut gpiob.crl, State::High),
+                .into_open_drain_output_with_state(&mut gpiob.crl, PinState::High),
             col8: gpiob
                 .pb7
-                .into_open_drain_output_with_state(&mut gpiob.crl, State::High),
+                .into_open_drain_output_with_state(&mut gpiob.crl, PinState::High),
             col9: gpiob
                 .pb8
-                .into_open_drain_output_with_state(&mut gpiob.crh, State::High),
+                .into_open_drain_output_with_state(&mut gpiob.crh, PinState::High),
             col10: gpiob
                 .pb9
-                .into_open_drain_output_with_state(&mut gpiob.crh, State::High),
+                .into_open_drain_output_with_state(&mut gpiob.crh, PinState::High),
             col11: gpiob
                 .pb10
-                .into_open_drain_output_with_state(&mut gpiob.crh, State::High),
+                .into_open_drain_output_with_state(&mut gpiob.crh, PinState::High),
         };
 
         // Declare Debug-GPIOs
@@ -199,62 +198,74 @@ const APP: () = {
         let debug_pa10 = gpioa.pa10.into_push_pull_output(&mut gpioa.crh);
 
         // Queues
-        *BUTTON_QUEUE = Some(Queue::new());
-        let (button_event_p, button_event_c) = BUTTON_QUEUE.as_mut().unwrap().split();
+        let (button_event_p, button_event_c) = cx.local.BUTTON_QUEUE.split();
 
         // USB
         let _usb_pullup = gpioa
             .pa8
-            .into_push_pull_output_with_state(&mut gpioa.crh, State::High);
+            .into_push_pull_output_with_state(&mut gpioa.crh, PinState::High);
 
         let usb_dm = gpioa.pa11;
         let usb_dp = gpioa.pa12;
 
         let usb = Peripheral {
-            usb: cx.device.USB,
+            usb: dp.USB,
             pin_dm: usb_dm,
             pin_dp: usb_dp,
         };
 
-        *USB_BUS = Some(UsbBus::new(usb));
+        unsafe {
+            USB_BUS.replace(UsbBus::new(usb));
+        }
 
-        let midi = usb_midi::MidiClass::new(USB_BUS.as_ref().unwrap());
+        let midi = usb_midi::MidiClass::new(unsafe { USB_BUS.as_ref().unwrap() });
 
-        let usb_dev = UsbDeviceBuilder::new(USB_BUS.as_ref().unwrap(), UsbVidPid(VID, PID))
-            .manufacturer("derfetzer")
-            .product("open-cleverpad")
-            .max_power(500)
-            .build();
+        let usb_dev =
+            UsbDeviceBuilder::new(unsafe { USB_BUS.as_ref().unwrap() }, UsbVidPid(VID, PID))
+                .manufacturer("derfetzer")
+                .product("open-cleverpad")
+                .max_power(500)
+                .build();
 
         let button_delay = AsmDelay::new(bitrate::U32BitrateExt::mhz(72));
         let encoder_delay = AsmDelay::new(bitrate::U32BitrateExt::mhz(72));
 
-        cx.spawn.led_bank().unwrap();
-        cx.spawn.enc().unwrap();
-        cx.spawn.enc_eval().unwrap();
-        cx.spawn.button().unwrap();
+        let mono = DwtSystick::new(&mut cp.DCB, cp.DWT, cp.SYST, clocks.sysclk().to_Hz());
 
-        init::LateResources {
-            LEDS: Leds::new(led_pins),
-            ENCODERS: Encoders::new(encoder_pins, encoder_delay),
-            BUTTON_MATRIX: ButtonMatrix::new(button_pins, button_delay),
-            USB_DEV: usb_dev,
-            MIDI: midi,
-            BUTTON_EVENT_P: button_event_p,
-            BUTTON_EVENT_C: button_event_c,
-            DEBUG_PIN_PA9: debug_pa9,
-            DEBUG_PIN_PA10: debug_pa10,
-        }
+        led_bank::spawn().unwrap();
+        enc::spawn().unwrap();
+        enc_eval::spawn().unwrap();
+        button::spawn().unwrap();
+
+        (
+            Shared {
+                LEDS: Leds::new(led_pins),
+                ENCODERS: Encoders::new(encoder_pins, encoder_delay),
+                BUTTON_MATRIX: ButtonMatrix::new(button_pins, button_delay),
+                ENCODER_POSITIONS: [0; 8],
+                PREV_ENCODER_POSITIONS: [0; 8],
+                ENCODER_PARAMETER_TYPE: ParameterType::Volume,
+                PREV_BUTTON_STATE: [0; 11],
+                USB_DEV: usb_dev,
+                MIDI: midi,
+                BUTTON_EVENT_P: button_event_p,
+                BUTTON_EVENT_C: button_event_c,
+                DEBUG_PIN_PA9: debug_pa9,
+                DEBUG_PIN_PA10: debug_pa10,
+            },
+            Local {},
+            init::Monotonics(mono),
+        )
     }
 
-    #[idle(resources = [BUTTON_EVENT_C, ENCODER_POSITIONS, ENCODER_PARAMETER_TYPE, LEDS, MIDI, DEBUG_PIN_PA9])]
+    #[idle(shared = [BUTTON_EVENT_C, ENCODER_POSITIONS, ENCODER_PARAMETER_TYPE, LEDS, MIDI, DEBUG_PIN_PA9])]
     fn idle(mut cx: idle::Context) -> ! {
         let parameter_led_event = LedEvent::new(
             ButtonType::Parameter(ParameterType::Volume),
             LedEventType::Switch(true),
         );
 
-        cx.resources.LEDS.lock(|l| {
+        cx.shared.LEDS.lock(|l| {
             let banks = l.get_banks();
             l.set_banks(parameter_led_event.apply_to_banks(banks));
         });
@@ -264,14 +275,14 @@ const APP: () = {
 
         let master_led_event = LedEvent::new(ButtonType::Master(1), LedEventType::Switch(true));
 
-        cx.resources.LEDS.lock(|l| {
+        cx.shared.LEDS.lock(|l| {
             let banks = l.get_banks();
             l.set_banks(master_led_event.apply_to_banks(banks));
         });
 
         loop {
             // Handle button events
-            if let Some(e) = cx.resources.BUTTON_EVENT_C.dequeue() {
+            if let Some(e) = cx.shared.BUTTON_EVENT_C.dequeue() {
                 let on = match e.event {
                     ButtonEventEdge::NegEdge => false,
                     ButtonEventEdge::PosEdge => true,
@@ -287,13 +298,13 @@ const APP: () = {
                                 .unwrap()
                                 .to_bytes(),
                         };
-                        cx.resources.MIDI.lock(|m| m.enqueue(midi).unwrap());
+                        cx.shared.MIDI.lock(|m| m.enqueue(midi).unwrap());
                         rtic::pend(pac::Interrupt::USB_LP_CAN_RX0);
                     }
                     ButtonType::Master(channel) => {
                         if on {
                             // switch MIDI channel for pads
-                            cx.resources.LEDS.lock(|l| {
+                            cx.shared.LEDS.lock(|l| {
                                 for i in 0..6 {
                                     master_channel_leds[master_channel as usize - 1][i] =
                                         l.get_bank_value(i);
@@ -322,7 +333,7 @@ const APP: () = {
                     ButtonType::Parameter(param) => {
                         if on {
                             let encoder_parameter_type =
-                                cx.resources.ENCODER_PARAMETER_TYPE.lock(|ept| *ept);
+                                cx.shared.ENCODER_PARAMETER_TYPE.lock(|ept| *ept);
 
                             let parameter_off_event = LedEvent::new(
                                 ButtonType::Parameter(encoder_parameter_type),
@@ -331,11 +342,11 @@ const APP: () = {
                             let parameter_on_event =
                                 LedEvent::new(e.btn, LedEventType::Switch(true));
 
-                            cx.resources.ENCODER_PARAMETER_TYPE.lock(|ept| {
+                            cx.shared.ENCODER_PARAMETER_TYPE.lock(|ept| {
                                 *ept = param;
                             });
 
-                            cx.resources.LEDS.lock(|l| {
+                            cx.shared.LEDS.lock(|l| {
                                 let mut banks = l.get_banks();
                                 banks = parameter_off_event.apply_to_banks(banks);
                                 banks = parameter_on_event.apply_to_banks(banks);
@@ -349,7 +360,7 @@ const APP: () = {
                             false => NoteOff::new(8, dir as u8).unwrap().to_bytes(),
                         };
 
-                        cx.resources.MIDI.lock(|m| m.enqueue(midi).unwrap());
+                        cx.shared.MIDI.lock(|m| m.enqueue(midi).unwrap());
                         rtic::pend(pac::Interrupt::USB_LP_CAN_RX0);
                     }
                     ButtonType::Mode(mode) => {
@@ -358,14 +369,14 @@ const APP: () = {
                             false => NoteOff::new(9, mode as u8).unwrap().to_bytes(),
                         };
 
-                        cx.resources.MIDI.lock(|m| m.enqueue(midi).unwrap());
+                        cx.shared.MIDI.lock(|m| m.enqueue(midi).unwrap());
                         rtic::pend(pac::Interrupt::USB_LP_CAN_RX0);
                     }
                 };
             }
 
             // Handle MIDI messages
-            let message = cx.resources.MIDI.lock(|m| m.dequeue());
+            let message = cx.shared.MIDI.lock(|m| m.dequeue());
 
             if let Some(b) = message {
                 let mut led_event = None;
@@ -462,7 +473,7 @@ const APP: () = {
 
                 if let Some(le) = led_event {
                     if channel == master_channel {
-                        cx.resources.LEDS.lock(|l| {
+                        cx.shared.LEDS.lock(|l| {
                             let banks = l.get_banks();
                             l.set_banks(le.apply_to_banks(banks));
                         });
@@ -475,36 +486,34 @@ const APP: () = {
         }
     }
 
-    #[task(priority = 3, schedule = [led_bank], resources = [LEDS])]
-    fn led_bank(cx: led_bank::Context) {
-        cx.resources.LEDS.write_next_bank();
+    #[task(priority = 3, shared = [LEDS])]
+    fn led_bank(mut cx: led_bank::Context) {
+        cx.shared.LEDS.lock(|leds| leds.write_next_bank());
 
-        cx.schedule
-            .led_bank(cx.scheduled + LED_BANK_PERIOD.cycles())
-            .unwrap();
+        led_bank::spawn_after(LED_BANK_PERIOD.micros()).unwrap();
     }
 
-    #[task(priority = 2, schedule = [enc], resources = [ENCODERS, ENCODER_POSITIONS, DEBUG_PIN_PA10])]
-    fn enc(cx: enc::Context) {
-        cx.resources.DEBUG_PIN_PA10.set_high().unwrap();
+    #[task(priority = 2, shared = [ENCODERS, ENCODER_POSITIONS, DEBUG_PIN_PA10])]
+    fn enc(mut cx: enc::Context) {
+        cx.shared.DEBUG_PIN_PA10.set_high();
 
-        let change = cx.resources.ENCODERS.read();
+        let change = cx.shared.ENCODERS.read();
 
         if change {
-            *cx.resources.ENCODER_POSITIONS = cx.resources.ENCODERS.get_positions();
+            cx.shared
+                .ENCODER_POSITIONS
+                .lock(|pos| *pos = cx.shared.ENCODERS.get_positions());
         }
 
-        cx.schedule
-            .enc(cx.scheduled + ENC_CAPTURE_PERIOD.cycles())
-            .unwrap();
+        enc::spawn_after(ENC_CAPTURE_PERIOD.micros()).unwrap();
 
-        cx.resources.DEBUG_PIN_PA10.set_low().unwrap();
+        cx.shared.DEBUG_PIN_PA10.set_low();
     }
 
-    #[task(schedule = [enc_eval], resources = [ENCODER_POSITIONS, PREV_ENCODER_POSITIONS, ENCODER_PARAMETER_TYPE, MIDI])]
+    #[task(shared = [ENCODER_POSITIONS, PREV_ENCODER_POSITIONS, ENCODER_PARAMETER_TYPE, MIDI])]
     fn enc_eval(mut cx: enc_eval::Context) {
-        let new_encoder_positions = cx.resources.ENCODER_POSITIONS.lock(|&mut p| p);
-        let encoder_positions = *cx.resources.PREV_ENCODER_POSITIONS;
+        let new_encoder_positions = cx.shared.ENCODER_POSITIONS.lock(|&mut p| p);
+        let encoder_positions = *cx.shared.PREV_ENCODER_POSITIONS;
 
         // Handle encoder changes
         if new_encoder_positions != encoder_positions {
@@ -524,35 +533,33 @@ const APP: () = {
                     };
 
                     let midi = ControlChange::new(
-                        *cx.resources.ENCODER_PARAMETER_TYPE as u8,
+                        cx.shared.ENCODER_PARAMETER_TYPE.lock(|t| *t as u8),
                         i as u8 + 1,
                         value,
                     )
                     .unwrap()
                     .to_bytes();
-                    cx.resources.MIDI.enqueue(midi).unwrap();
+                    cx.shared.MIDI.lock(|m| m.enqueue(midi).unwrap());
                     rtic::pend(pac::Interrupt::USB_LP_CAN_RX0);
                 }
             }
-            *cx.resources.PREV_ENCODER_POSITIONS = new_encoder_positions;
+            *cx.shared.PREV_ENCODER_POSITIONS = new_encoder_positions;
         }
 
-        cx.schedule
-            .enc_eval(cx.scheduled + ENC_EVAL_PERIOD.cycles())
-            .unwrap();
+        enc_eval::spawn_after(ENC_EVAL_PERIOD.micros()).unwrap();
     }
 
-    #[task(priority = 2, schedule = [button], resources = [BUTTON_MATRIX, PREV_BUTTON_STATE, BUTTON_EVENT_P])]
+    #[task(priority = 2, shared = [BUTTON_MATRIX, PREV_BUTTON_STATE, BUTTON_EVENT_P])]
     fn button(cx: button::Context) {
-        cx.resources.BUTTON_MATRIX.read();
+        cx.shared.BUTTON_MATRIX.read();
 
-        let deb_rows = cx.resources.BUTTON_MATRIX.get_debounced_rows();
+        let deb_rows = cx.shared.BUTTON_MATRIX.get_debounced_rows();
 
-        if deb_rows != *cx.resources.PREV_BUTTON_STATE {
+        if deb_rows != *cx.shared.PREV_BUTTON_STATE {
             for (col, deb_row) in deb_rows.iter().enumerate() {
                 for row in 0..8 {
                     let edge = match (
-                        ((cx.resources.PREV_BUTTON_STATE[col] >> row) & 1),
+                        ((cx.shared.PREV_BUTTON_STATE[col] >> row) & 1),
                         ((deb_row >> row) & 1),
                     ) {
                         (0, 1) => Some(PosEdge),
@@ -561,7 +568,7 @@ const APP: () = {
                     };
 
                     if let Some(e) = edge {
-                        cx.resources
+                        cx.shared
                             .BUTTON_EVENT_P
                             .enqueue(ButtonEvent::new(row, col as u8, e))
                             .unwrap();
@@ -569,42 +576,44 @@ const APP: () = {
                 }
             }
 
-            *cx.resources.PREV_BUTTON_STATE = deb_rows;
+            *cx.shared.PREV_BUTTON_STATE = deb_rows;
         }
 
-        cx.schedule
-            .button(cx.scheduled + BUTTON_COL_PERIOD.cycles())
-            .unwrap();
+        button::spawn_after(BUTTON_COL_PERIOD.micros()).unwrap();
     }
 
-    #[task(binds = USB_HP_CAN_TX, resources = [USB_DEV, MIDI])]
+    #[task(binds = USB_HP_CAN_TX, shared = [USB_DEV, MIDI])]
     fn usb_hp_can_tx(cx: usb_hp_can_tx::Context) {
-        usb_poll(cx.resources.USB_DEV, cx.resources.MIDI);
+        let mut usb_dev = cx.shared.USB_DEV;
+        let mut midi = cx.shared.MIDI;
+
+        (&mut usb_dev, &mut midi).lock(|usb_dev, midi| {
+            usb_poll(usb_dev, midi);
+        });
     }
 
-    #[task(binds = USB_LP_CAN_RX0, resources = [USB_DEV, MIDI])]
+    #[task(binds = USB_LP_CAN_RX0, shared = [USB_DEV, MIDI])]
     fn usb_lp_can_rx0(cx: usb_lp_can_rx0::Context) {
-        usb_poll(cx.resources.USB_DEV, cx.resources.MIDI);
+        let mut usb_dev = cx.shared.USB_DEV;
+        let mut midi = cx.shared.MIDI;
+
+        (&mut usb_dev, &mut midi).lock(|usb_dev, midi| {
+            usb_poll(usb_dev, midi);
+        });
     }
 
-    extern "C" {
-        fn EXTI1();
-        fn EXTI2();
-        fn EXTI3();
-    }
-};
+    fn usb_poll<B: bus::UsbBus>(
+        usb_dev: &mut UsbDevice<'static, B>,
+        midi: &mut usb_midi::MidiClass<'static, B>,
+    ) -> bool {
+        if !midi.write_queue_is_empty() {
+            midi.write_queue_to_host().unwrap();
+        }
 
-fn usb_poll<B: bus::UsbBus>(
-    usb_dev: &mut UsbDevice<'static, B>,
-    midi: &mut usb_midi::MidiClass<'static, B>,
-) -> bool {
-    if !midi.write_queue_is_empty() {
-        midi.write_queue_to_host().unwrap();
-    }
+        if !usb_dev.poll(&mut [midi]) {
+            return false;
+        }
 
-    if !usb_dev.poll(&mut [midi]) {
-        return false;
+        matches!(midi.read_to_queue(), Ok(len) if len > 0)
     }
-
-    matches!(midi.read_to_queue(), Ok(len) if len > 0)
 }

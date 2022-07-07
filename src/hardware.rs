@@ -1,16 +1,11 @@
-use cortex_m::asm::delay;
-
 use asm_delay::AsmDelay;
-
-use embedded_hal::digital::v2::{InputPin, OutputPin};
+use cortex_m::asm::delay;
 use embedded_hal::prelude::*;
-
 use stm32f1xx_hal::gpio::gpioa::{PA0, PA1, PA2, PA3, PA4, PA5};
 use stm32f1xx_hal::gpio::gpiob::{
     PB0, PB1, PB10, PB12, PB13, PB14, PB15, PB2, PB3, PB4, PB5, PB6, PB7, PB8, PB9,
 };
 use stm32f1xx_hal::gpio::gpioc::{PC0, PC1, PC10, PC11, PC12, PC13, PC14, PC15, PC2, PC8, PC9};
-
 use stm32f1xx_hal::gpio::{Floating, Input, OpenDrain, Output, PushPull};
 
 pub struct ButtonMatrix {
@@ -60,45 +55,45 @@ impl ButtonMatrix {
 
         for i in 0..11 {
             match i {
-                0 => self.pins.col1.set_low().unwrap(),
-                1 => self.pins.col2.set_low().unwrap(),
-                2 => self.pins.col3.set_low().unwrap(),
-                3 => self.pins.col4.set_low().unwrap(),
-                4 => self.pins.col5.set_low().unwrap(),
-                5 => self.pins.col6.set_low().unwrap(),
-                6 => self.pins.col7.set_low().unwrap(),
-                7 => self.pins.col8.set_low().unwrap(),
-                8 => self.pins.col9.set_low().unwrap(),
-                9 => self.pins.col10.set_low().unwrap(),
-                10 => self.pins.col11.set_low().unwrap(),
+                0 => self.pins.col1.set_low(),
+                1 => self.pins.col2.set_low(),
+                2 => self.pins.col3.set_low(),
+                3 => self.pins.col4.set_low(),
+                4 => self.pins.col5.set_low(),
+                5 => self.pins.col6.set_low(),
+                6 => self.pins.col7.set_low(),
+                7 => self.pins.col8.set_low(),
+                8 => self.pins.col9.set_low(),
+                9 => self.pins.col10.set_low(),
+                10 => self.pins.col11.set_low(),
                 _ => panic!("This should never happen"),
             };
             self.delay.delay_us(10_u32);
 
             let mut row: u8 = 0;
-            row |= self.pins.row1.is_low().unwrap() as u8;
-            row |= (self.pins.row2.is_low().unwrap() as u8) << 1;
-            row |= (self.pins.row3.is_low().unwrap() as u8) << 2;
-            row |= (self.pins.row4.is_low().unwrap() as u8) << 3;
-            row |= (self.pins.row5.is_low().unwrap() as u8) << 4;
-            row |= (self.pins.row6.is_low().unwrap() as u8) << 5;
-            row |= (self.pins.row7.is_low().unwrap() as u8) << 6;
-            row |= (self.pins.row8.is_low().unwrap() as u8) << 7;
+            row |= self.pins.row1.is_low() as u8;
+            row |= (self.pins.row2.is_low() as u8) << 1;
+            row |= (self.pins.row3.is_low() as u8) << 2;
+            row |= (self.pins.row4.is_low() as u8) << 3;
+            row |= (self.pins.row5.is_low() as u8) << 4;
+            row |= (self.pins.row6.is_low() as u8) << 5;
+            row |= (self.pins.row7.is_low() as u8) << 6;
+            row |= (self.pins.row8.is_low() as u8) << 7;
 
             self.rows[i] = row;
 
             match i {
-                0 => self.pins.col1.set_high().unwrap(),
-                1 => self.pins.col2.set_high().unwrap(),
-                2 => self.pins.col3.set_high().unwrap(),
-                3 => self.pins.col4.set_high().unwrap(),
-                4 => self.pins.col5.set_high().unwrap(),
-                5 => self.pins.col6.set_high().unwrap(),
-                6 => self.pins.col7.set_high().unwrap(),
-                7 => self.pins.col8.set_high().unwrap(),
-                8 => self.pins.col9.set_high().unwrap(),
-                9 => self.pins.col10.set_high().unwrap(),
-                10 => self.pins.col11.set_high().unwrap(),
+                0 => self.pins.col1.set_high(),
+                1 => self.pins.col2.set_high(),
+                2 => self.pins.col3.set_high(),
+                3 => self.pins.col4.set_high(),
+                4 => self.pins.col5.set_high(),
+                5 => self.pins.col6.set_high(),
+                6 => self.pins.col7.set_high(),
+                7 => self.pins.col8.set_high(),
+                8 => self.pins.col9.set_high(),
+                9 => self.pins.col10.set_high(),
+                10 => self.pins.col11.set_high(),
                 _ => panic!("This should never happen"),
             };
         }
@@ -179,30 +174,30 @@ impl Encoders {
 
         for i in 0..8 {
             if i & 1 << 0 == 0 {
-                self.pins.a0.set_low().unwrap();
+                self.pins.a0.set_low();
             } else {
-                self.pins.a0.set_high().unwrap();
+                self.pins.a0.set_high();
             }
             if i & 1 << 1 == 0 {
-                self.pins.a1.set_low().unwrap();
+                self.pins.a1.set_low();
             } else {
-                self.pins.a1.set_high().unwrap();
+                self.pins.a1.set_high();
             }
             if i & 1 << 2 == 0 {
-                self.pins.a2.set_low().unwrap();
+                self.pins.a2.set_low();
             } else {
-                self.pins.a2.set_high().unwrap();
+                self.pins.a2.set_high();
             }
 
             self.delay.delay_us(5_u32);
 
-            if self.pins.a.is_low().unwrap() {
+            if self.pins.a.is_low() {
                 self.a |= 1_u8 << i;
             } else {
                 self.a &= !(1_u8 << i);
             }
 
-            if self.pins.b.is_low().unwrap() {
+            if self.pins.b.is_low() {
                 self.b |= 1_u8 << i;
             } else {
                 self.b &= !(1_u8 << i);
@@ -309,44 +304,44 @@ impl Leds {
             self.current_bank = 0;
         }
 
-        self.pins.hs_en_l.set_high().unwrap();
-        self.pins.ls_en_l.set_high().unwrap();
+        self.pins.hs_en_l.set_high();
+        self.pins.ls_en_l.set_high();
 
         if self.current_bank & 1 << 0 == 0 {
-            self.pins.hs_a0.set_low().unwrap();
+            self.pins.hs_a0.set_low();
         } else {
-            self.pins.hs_a0.set_high().unwrap();
+            self.pins.hs_a0.set_high();
         }
         if self.current_bank & 1 << 1 == 0 {
-            self.pins.hs_a1.set_low().unwrap();
+            self.pins.hs_a1.set_low();
         } else {
-            self.pins.hs_a1.set_high().unwrap();
+            self.pins.hs_a1.set_high();
         }
         if self.current_bank & 1 << 2 == 0 {
-            self.pins.hs_a2.set_low().unwrap();
+            self.pins.hs_a2.set_low();
         } else {
-            self.pins.hs_a2.set_high().unwrap();
+            self.pins.hs_a2.set_high();
         }
 
         for i in 0..32 {
             if self.banks[self.current_bank] & (1 << i) == 0 {
-                self.pins.ls_dai.set_low().unwrap();
+                self.pins.ls_dai.set_low();
             } else {
-                self.pins.ls_dai.set_high().unwrap();
+                self.pins.ls_dai.set_high();
             }
             delay(4);
-            self.pins.ls_dck.set_high().unwrap();
+            self.pins.ls_dck.set_high();
             delay(4);
-            self.pins.ls_dck.set_low().unwrap();
+            self.pins.ls_dck.set_low();
         }
         delay(4);
-        self.pins.ls_lat.set_high().unwrap();
+        self.pins.ls_lat.set_high();
         delay(4);
-        self.pins.ls_lat.set_low().unwrap();
+        self.pins.ls_lat.set_low();
         delay(4);
 
-        self.pins.ls_en_l.set_low().unwrap();
-        self.pins.hs_en_l.set_low().unwrap();
+        self.pins.ls_en_l.set_low();
+        self.pins.hs_en_l.set_low();
     }
 }
 

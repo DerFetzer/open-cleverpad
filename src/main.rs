@@ -49,29 +49,23 @@ mod app {
     #[shared]
     struct Shared {
         LEDS: Leds,
-        #[lock_free]
-        ENCODERS: Encoders,
-        #[lock_free]
-        BUTTON_MATRIX: ButtonMatrix,
         ENCODER_POSITIONS: [i32; 8],
-        #[lock_free]
-        PREV_ENCODER_POSITIONS: [i32; 8],
         ENCODER_PARAMETER_TYPE: ParameterType,
-        #[lock_free]
-        PREV_BUTTON_STATE: [u8; 11],
         USB_DEV: UsbDevice<'static, UsbBusType>,
         MIDI: usb_midi::MidiClass<'static, UsbBusType>,
-        #[lock_free]
-        BUTTON_EVENT_P: Producer<'static, ButtonEvent, 16>,
-        #[lock_free]
-        BUTTON_EVENT_C: Consumer<'static, ButtonEvent, 16>,
-        DEBUG_PIN_PA9: PA9<Output<PushPull>>,
-        #[lock_free]
-        DEBUG_PIN_PA10: PA10<Output<PushPull>>,
     }
 
     #[local]
-    struct Local {}
+    struct Local {
+        ENCODERS: Encoders,
+        BUTTON_MATRIX: ButtonMatrix,
+        PREV_ENCODER_POSITIONS: [i32; 8],
+        PREV_BUTTON_STATE: [u8; 11],
+        BUTTON_EVENT_P: Producer<'static, ButtonEvent, 16>,
+        BUTTON_EVENT_C: Consumer<'static, ButtonEvent, 16>,
+        // DEBUG_PIN_PA9: PA9<Output<PushPull>>,
+        DEBUG_PIN_PA10: PA10<Output<PushPull>>,
+    }
 
     #[init(local = [BUTTON_QUEUE: Queue<ButtonEvent, 16> = Queue::new()])]
     fn init(cx: init::Context) -> (Shared, Local, init::Monotonics) {
@@ -194,7 +188,7 @@ mod app {
         };
 
         // Declare Debug-GPIOs
-        let debug_pa9 = gpioa.pa9.into_push_pull_output(&mut gpioa.crh);
+        let _debug_pa9 = gpioa.pa9.into_push_pull_output(&mut gpioa.crh);
         let debug_pa10 = gpioa.pa10.into_push_pull_output(&mut gpioa.crh);
 
         // Queues
@@ -240,25 +234,26 @@ mod app {
         (
             Shared {
                 LEDS: Leds::new(led_pins),
-                ENCODERS: Encoders::new(encoder_pins, encoder_delay),
-                BUTTON_MATRIX: ButtonMatrix::new(button_pins, button_delay),
                 ENCODER_POSITIONS: [0; 8],
-                PREV_ENCODER_POSITIONS: [0; 8],
                 ENCODER_PARAMETER_TYPE: ParameterType::Volume,
-                PREV_BUTTON_STATE: [0; 11],
                 USB_DEV: usb_dev,
                 MIDI: midi,
+            },
+            Local {
+                ENCODERS: Encoders::new(encoder_pins, encoder_delay),
+                BUTTON_MATRIX: ButtonMatrix::new(button_pins, button_delay),
+                PREV_ENCODER_POSITIONS: [0; 8],
+                PREV_BUTTON_STATE: [0; 11],
                 BUTTON_EVENT_P: button_event_p,
                 BUTTON_EVENT_C: button_event_c,
-                DEBUG_PIN_PA9: debug_pa9,
+                // DEBUG_PIN_PA9: debug_pa9,
                 DEBUG_PIN_PA10: debug_pa10,
             },
-            Local {},
             init::Monotonics(mono),
         )
     }
 
-    #[idle(shared = [BUTTON_EVENT_C, ENCODER_POSITIONS, ENCODER_PARAMETER_TYPE, LEDS, MIDI, DEBUG_PIN_PA9])]
+    #[idle(local = [BUTTON_EVENT_C], shared = [ENCODER_POSITIONS, ENCODER_PARAMETER_TYPE, LEDS, MIDI])]
     fn idle(mut cx: idle::Context) -> ! {
         let parameter_led_event = LedEvent::new(
             ButtonType::Parameter(ParameterType::Volume),
@@ -282,7 +277,7 @@ mod app {
 
         loop {
             // Handle button events
-            if let Some(e) = cx.shared.BUTTON_EVENT_C.dequeue() {
+            if let Some(e) = cx.local.BUTTON_EVENT_C.dequeue() {
                 let on = match e.event {
                     ButtonEventEdge::NegEdge => false,
                     ButtonEventEdge::PosEdge => true,
@@ -493,27 +488,27 @@ mod app {
         led_bank::spawn_after(LED_BANK_PERIOD.micros()).unwrap();
     }
 
-    #[task(priority = 2, shared = [ENCODERS, ENCODER_POSITIONS, DEBUG_PIN_PA10])]
+    #[task(priority = 2, local = [ENCODERS, DEBUG_PIN_PA10], shared = [ENCODER_POSITIONS])]
     fn enc(mut cx: enc::Context) {
-        cx.shared.DEBUG_PIN_PA10.set_high();
+        cx.local.DEBUG_PIN_PA10.set_high();
 
-        let change = cx.shared.ENCODERS.read();
+        let change = cx.local.ENCODERS.read();
 
         if change {
             cx.shared
                 .ENCODER_POSITIONS
-                .lock(|pos| *pos = cx.shared.ENCODERS.get_positions());
+                .lock(|pos| *pos = cx.local.ENCODERS.get_positions());
         }
 
         enc::spawn_after(ENC_CAPTURE_PERIOD.micros()).unwrap();
 
-        cx.shared.DEBUG_PIN_PA10.set_low();
+        cx.local.DEBUG_PIN_PA10.set_low();
     }
 
-    #[task(shared = [ENCODER_POSITIONS, PREV_ENCODER_POSITIONS, ENCODER_PARAMETER_TYPE, MIDI])]
+    #[task(local = [PREV_ENCODER_POSITIONS], shared = [ENCODER_POSITIONS, ENCODER_PARAMETER_TYPE, MIDI])]
     fn enc_eval(mut cx: enc_eval::Context) {
         let new_encoder_positions = cx.shared.ENCODER_POSITIONS.lock(|&mut p| p);
-        let encoder_positions = *cx.shared.PREV_ENCODER_POSITIONS;
+        let encoder_positions = *cx.local.PREV_ENCODER_POSITIONS;
 
         // Handle encoder changes
         if new_encoder_positions != encoder_positions {
@@ -543,23 +538,23 @@ mod app {
                     rtic::pend(pac::Interrupt::USB_LP_CAN_RX0);
                 }
             }
-            *cx.shared.PREV_ENCODER_POSITIONS = new_encoder_positions;
+            *cx.local.PREV_ENCODER_POSITIONS = new_encoder_positions;
         }
 
         enc_eval::spawn_after(ENC_EVAL_PERIOD.micros()).unwrap();
     }
 
-    #[task(priority = 2, shared = [BUTTON_MATRIX, PREV_BUTTON_STATE, BUTTON_EVENT_P])]
+    #[task(priority = 2, local = [BUTTON_MATRIX, PREV_BUTTON_STATE, BUTTON_EVENT_P])]
     fn button(cx: button::Context) {
-        cx.shared.BUTTON_MATRIX.read();
+        cx.local.BUTTON_MATRIX.read();
 
-        let deb_rows = cx.shared.BUTTON_MATRIX.get_debounced_rows();
+        let deb_rows = cx.local.BUTTON_MATRIX.get_debounced_rows();
 
-        if deb_rows != *cx.shared.PREV_BUTTON_STATE {
+        if deb_rows != *cx.local.PREV_BUTTON_STATE {
             for (col, deb_row) in deb_rows.iter().enumerate() {
                 for row in 0..8 {
                     let edge = match (
-                        ((cx.shared.PREV_BUTTON_STATE[col] >> row) & 1),
+                        ((cx.local.PREV_BUTTON_STATE[col] >> row) & 1),
                         ((deb_row >> row) & 1),
                     ) {
                         (0, 1) => Some(PosEdge),
@@ -568,7 +563,7 @@ mod app {
                     };
 
                     if let Some(e) = edge {
-                        cx.shared
+                        cx.local
                             .BUTTON_EVENT_P
                             .enqueue(ButtonEvent::new(row, col as u8, e))
                             .unwrap();
@@ -576,7 +571,7 @@ mod app {
                 }
             }
 
-            *cx.shared.PREV_BUTTON_STATE = deb_rows;
+            *cx.local.PREV_BUTTON_STATE = deb_rows;
         }
 
         button::spawn_after(BUTTON_COL_PERIOD.micros()).unwrap();

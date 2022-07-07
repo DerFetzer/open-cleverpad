@@ -14,7 +14,7 @@
 name = "open-cleverpad"
 version = "0.2.1"
 authors = ["DerFetzer <kontakt@der-fetzer.de>"]
-edition = "2018"
+edition = "2021"
 
 # this lets you use `cargo fix`!
 [[bin]]

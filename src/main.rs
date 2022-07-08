@@ -52,6 +52,7 @@ mod app {
         LEDS: Leds,
         ENCODER_POSITIONS: [i32; 8],
         ENCODER_PARAMETER_TYPE: ParameterType,
+        BUTTON_EVENT_P: Producer<'static, ButtonEvent, 16>,
         USB_DEV: UsbDevice<'static, UsbBusType>,
         MIDI: MidiClass<'static, UsbBusType>,
     }
@@ -62,7 +63,6 @@ mod app {
         BUTTON_MATRIX: ButtonMatrix,
         PREV_ENCODER_POSITIONS: [i32; 8],
         PREV_BUTTON_STATE: [u8; 11],
-        BUTTON_EVENT_P: Producer<'static, ButtonEvent, 16>,
         BUTTON_EVENT_C: Consumer<'static, ButtonEvent, 16>,
         // DEBUG_PIN_PA9: PA9<Output<PushPull>>,
         DEBUG_PIN_PA10: PA10<Output<PushPull>>,
@@ -240,6 +240,7 @@ mod app {
                 LEDS: Leds::new(led_pins),
                 ENCODER_POSITIONS: [0; 8],
                 ENCODER_PARAMETER_TYPE: ParameterType::Volume,
+                BUTTON_EVENT_P: button_event_p,
                 USB_DEV: usb_dev,
                 MIDI: midi,
             },
@@ -248,7 +249,6 @@ mod app {
                 BUTTON_MATRIX: ButtonMatrix::new(button_pins, button_delay),
                 PREV_ENCODER_POSITIONS: [0; 8],
                 PREV_BUTTON_STATE: [0; 11],
-                BUTTON_EVENT_P: button_event_p,
                 BUTTON_EVENT_C: button_event_c,
                 // DEBUG_PIN_PA9: debug_pa9,
                 DEBUG_PIN_PA10: debug_pa10,
@@ -257,7 +257,7 @@ mod app {
         )
     }
 
-    #[idle(local = [BUTTON_EVENT_C], shared = [ENCODER_POSITIONS, ENCODER_PARAMETER_TYPE, LEDS, MIDI])]
+    #[idle(local = [BUTTON_EVENT_C], shared = [ENCODER_POSITIONS, ENCODER_PARAMETER_TYPE, LEDS, MIDI, BUTTON_EVENT_P])]
     fn idle(mut cx: idle::Context) -> ! {
         let parameter_led_event = LedEvent::new(
             ButtonType::Parameter(ParameterType::Volume),
@@ -489,6 +489,32 @@ mod app {
                     }
                 };
 
+                if let Some(cc) = ControlChange::from_bytes(b) {
+                    if cc.controller == 110 && cc.value < 8 {
+                        cx.shared.BUTTON_EVENT_P.lock(
+                            |bep: &mut Producer<'static, ButtonEvent, 16>| {
+                                bep.enqueue(ButtonEvent {
+                                    btn: ButtonType::Parameter(
+                                        ParameterType::try_from(cc.value).unwrap(),
+                                    ),
+                                    event: ButtonEventEdge::PosEdge,
+                                })
+                                .unwrap()
+                            },
+                        )
+                    } else if cc.controller == 111 && cc.value < 8 {
+                        cx.shared.BUTTON_EVENT_P.lock(
+                            |bep: &mut Producer<'static, ButtonEvent, 16>| {
+                                bep.enqueue(ButtonEvent {
+                                    btn: ButtonType::Master(cc.value + 1),
+                                    event: ButtonEventEdge::PosEdge,
+                                })
+                                .unwrap()
+                            },
+                        )
+                    }
+                }
+
                 if let Some(le) = led_event {
                     if channel == master_channel {
                         cx.shared.LEDS.lock(|l: &mut Leds| {
@@ -573,8 +599,8 @@ mod app {
         enc_eval::spawn_after(ENC_EVAL_PERIOD.micros()).unwrap();
     }
 
-    #[task(priority = 2, local = [BUTTON_MATRIX, PREV_BUTTON_STATE, BUTTON_EVENT_P])]
-    fn button(cx: button::Context) {
+    #[task(priority = 2, local = [BUTTON_MATRIX, PREV_BUTTON_STATE], shared = [BUTTON_EVENT_P])]
+    fn button(mut cx: button::Context) {
         cx.local.BUTTON_MATRIX.read();
 
         let deb_rows: [u8; 11] = cx.local.BUTTON_MATRIX.get_debounced_rows();
@@ -592,10 +618,11 @@ mod app {
                     };
 
                     if let Some(e) = edge {
-                        cx.local
-                            .BUTTON_EVENT_P
-                            .enqueue(ButtonEvent::new(row, col as u8, e))
-                            .unwrap();
+                        cx.shared.BUTTON_EVENT_P.lock(
+                            |bep: &mut Producer<'static, ButtonEvent, 16>| {
+                                bep.enqueue(ButtonEvent::new(row, col as u8, e)).unwrap()
+                            },
+                        )
                     }
                 }
             }

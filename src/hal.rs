@@ -1,3 +1,5 @@
+use num_enum::TryFromPrimitive;
+
 #[derive(Clone, Copy, Debug)]
 pub enum ButtonType {
     Pad { x: u8, y: u8 },
@@ -23,7 +25,8 @@ pub enum ModeType {
     Set,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromPrimitive)]
+#[repr(u8)]
 pub enum ParameterType {
     Volume = 0,
     SendA,

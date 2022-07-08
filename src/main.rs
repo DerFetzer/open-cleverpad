@@ -20,6 +20,7 @@ mod app {
     use crate::hardware::{ButtonMatrix, ButtonMatrixPins, EncoderPins, Encoders, LedPins, Leds};
     use crate::midi::{ControlChange, MidiMessage, NoteOff, NoteOn};
     use crate::usb_midi;
+    use crate::usb_midi::MidiClass;
     use asm_delay::{bitrate, AsmDelay};
     use core::cmp::min;
     use dwt_systick_monotonic::DwtSystick;
@@ -52,7 +53,7 @@ mod app {
         ENCODER_POSITIONS: [i32; 8],
         ENCODER_PARAMETER_TYPE: ParameterType,
         USB_DEV: UsbDevice<'static, UsbBusType>,
-        MIDI: usb_midi::MidiClass<'static, UsbBusType>,
+        MIDI: MidiClass<'static, UsbBusType>,
     }
 
     #[local]
@@ -192,7 +193,10 @@ mod app {
         let debug_pa10 = gpioa.pa10.into_push_pull_output(&mut gpioa.crh);
 
         // Queues
-        let (button_event_p, button_event_c) = cx.local.BUTTON_QUEUE.split();
+        let (button_event_p, button_event_c): (
+            Producer<'static, ButtonEvent, 16>,
+            Consumer<'static, ButtonEvent, 16>,
+        ) = cx.local.BUTTON_QUEUE.split();
 
         // USB
         let _usb_pullup = gpioa
@@ -260,7 +264,7 @@ mod app {
             LedEventType::Switch(true),
         );
 
-        cx.shared.LEDS.lock(|l| {
+        cx.shared.LEDS.lock(|l: &mut Leds| {
             let banks = l.get_banks();
             l.set_banks(parameter_led_event.apply_to_banks(banks));
         });
@@ -270,7 +274,7 @@ mod app {
 
         let master_led_event = LedEvent::new(ButtonType::Master(1), LedEventType::Switch(true));
 
-        cx.shared.LEDS.lock(|l| {
+        cx.shared.LEDS.lock(|l: &mut Leds| {
             let banks = l.get_banks();
             l.set_banks(master_led_event.apply_to_banks(banks));
         });
@@ -293,13 +297,17 @@ mod app {
                                 .unwrap()
                                 .to_bytes(),
                         };
-                        cx.shared.MIDI.lock(|m| m.enqueue(midi).unwrap());
+                        cx.shared
+                            .MIDI
+                            .lock(|m: &mut MidiClass<'static, UsbBusType>| {
+                                m.enqueue(midi).unwrap()
+                            });
                         rtic::pend(pac::Interrupt::USB_LP_CAN_RX0);
                     }
                     ButtonType::Master(channel) => {
                         if on {
                             // switch MIDI channel for pads
-                            cx.shared.LEDS.lock(|l| {
+                            cx.shared.LEDS.lock(|l: &mut Leds| {
                                 for i in 0..6 {
                                     master_channel_leds[master_channel as usize - 1][i] =
                                         l.get_bank_value(i);
@@ -327,8 +335,10 @@ mod app {
                     }
                     ButtonType::Parameter(param) => {
                         if on {
-                            let encoder_parameter_type =
-                                cx.shared.ENCODER_PARAMETER_TYPE.lock(|ept| *ept);
+                            let encoder_parameter_type = cx
+                                .shared
+                                .ENCODER_PARAMETER_TYPE
+                                .lock(|ept: &mut ParameterType| *ept);
 
                             let parameter_off_event = LedEvent::new(
                                 ButtonType::Parameter(encoder_parameter_type),
@@ -337,11 +347,13 @@ mod app {
                             let parameter_on_event =
                                 LedEvent::new(e.btn, LedEventType::Switch(true));
 
-                            cx.shared.ENCODER_PARAMETER_TYPE.lock(|ept| {
-                                *ept = param;
-                            });
+                            cx.shared
+                                .ENCODER_PARAMETER_TYPE
+                                .lock(|ept: &mut ParameterType| {
+                                    *ept = param;
+                                });
 
-                            cx.shared.LEDS.lock(|l| {
+                            cx.shared.LEDS.lock(|l: &mut Leds| {
                                 let mut banks = l.get_banks();
                                 banks = parameter_off_event.apply_to_banks(banks);
                                 banks = parameter_on_event.apply_to_banks(banks);
@@ -355,7 +367,11 @@ mod app {
                             false => NoteOff::new(8, dir as u8).unwrap().to_bytes(),
                         };
 
-                        cx.shared.MIDI.lock(|m| m.enqueue(midi).unwrap());
+                        cx.shared
+                            .MIDI
+                            .lock(|m: &mut MidiClass<'static, UsbBusType>| {
+                                m.enqueue(midi).unwrap()
+                            });
                         rtic::pend(pac::Interrupt::USB_LP_CAN_RX0);
                     }
                     ButtonType::Mode(mode) => {
@@ -364,14 +380,21 @@ mod app {
                             false => NoteOff::new(9, mode as u8).unwrap().to_bytes(),
                         };
 
-                        cx.shared.MIDI.lock(|m| m.enqueue(midi).unwrap());
+                        cx.shared
+                            .MIDI
+                            .lock(|m: &mut MidiClass<'static, UsbBusType>| {
+                                m.enqueue(midi).unwrap()
+                            });
                         rtic::pend(pac::Interrupt::USB_LP_CAN_RX0);
                     }
                 };
             }
 
             // Handle MIDI messages
-            let message = cx.shared.MIDI.lock(|m| m.dequeue());
+            let message = cx
+                .shared
+                .MIDI
+                .lock(|m: &mut MidiClass<'static, UsbBusType>| m.dequeue());
 
             if let Some(b) = message {
                 let mut led_event = None;
@@ -468,7 +491,7 @@ mod app {
 
                 if let Some(le) = led_event {
                     if channel == master_channel {
-                        cx.shared.LEDS.lock(|l| {
+                        cx.shared.LEDS.lock(|l: &mut Leds| {
                             let banks = l.get_banks();
                             l.set_banks(le.apply_to_banks(banks));
                         });
@@ -483,7 +506,9 @@ mod app {
 
     #[task(priority = 3, shared = [LEDS])]
     fn led_bank(mut cx: led_bank::Context) {
-        cx.shared.LEDS.lock(|leds| leds.write_next_bank());
+        cx.shared
+            .LEDS
+            .lock(|leds: &mut Leds| leds.write_next_bank());
 
         led_bank::spawn_after(LED_BANK_PERIOD.micros()).unwrap();
     }
@@ -492,12 +517,12 @@ mod app {
     fn enc(mut cx: enc::Context) {
         cx.local.DEBUG_PIN_PA10.set_high();
 
-        let change = cx.local.ENCODERS.read();
+        let change: bool = cx.local.ENCODERS.read();
 
         if change {
             cx.shared
                 .ENCODER_POSITIONS
-                .lock(|pos| *pos = cx.local.ENCODERS.get_positions());
+                .lock(|pos: &mut [i32; 8]| *pos = cx.local.ENCODERS.get_positions());
         }
 
         enc::spawn_after(ENC_CAPTURE_PERIOD.micros()).unwrap();
@@ -507,8 +532,8 @@ mod app {
 
     #[task(local = [PREV_ENCODER_POSITIONS], shared = [ENCODER_POSITIONS, ENCODER_PARAMETER_TYPE, MIDI])]
     fn enc_eval(mut cx: enc_eval::Context) {
-        let new_encoder_positions = cx.shared.ENCODER_POSITIONS.lock(|&mut p| p);
-        let encoder_positions = *cx.local.PREV_ENCODER_POSITIONS;
+        let new_encoder_positions = cx.shared.ENCODER_POSITIONS.lock(|&mut p: &mut [i32; 8]| p);
+        let encoder_positions: [i32; 8] = *cx.local.PREV_ENCODER_POSITIONS;
 
         // Handle encoder changes
         if new_encoder_positions != encoder_positions {
@@ -528,13 +553,17 @@ mod app {
                     };
 
                     let midi = ControlChange::new(
-                        cx.shared.ENCODER_PARAMETER_TYPE.lock(|t| *t as u8),
+                        cx.shared
+                            .ENCODER_PARAMETER_TYPE
+                            .lock(|t: &mut ParameterType| *t as u8),
                         i as u8 + 1,
                         value,
                     )
                     .unwrap()
                     .to_bytes();
-                    cx.shared.MIDI.lock(|m| m.enqueue(midi).unwrap());
+                    cx.shared
+                        .MIDI
+                        .lock(|m: &mut MidiClass<'static, UsbBusType>| m.enqueue(midi).unwrap());
                     rtic::pend(pac::Interrupt::USB_LP_CAN_RX0);
                 }
             }
@@ -548,7 +577,7 @@ mod app {
     fn button(cx: button::Context) {
         cx.local.BUTTON_MATRIX.read();
 
-        let deb_rows = cx.local.BUTTON_MATRIX.get_debounced_rows();
+        let deb_rows: [u8; 11] = cx.local.BUTTON_MATRIX.get_debounced_rows();
 
         if deb_rows != *cx.local.PREV_BUTTON_STATE {
             for (col, deb_row) in deb_rows.iter().enumerate() {
@@ -582,9 +611,12 @@ mod app {
         let mut usb_dev = cx.shared.USB_DEV;
         let mut midi = cx.shared.MIDI;
 
-        (&mut usb_dev, &mut midi).lock(|usb_dev, midi| {
-            usb_poll(usb_dev, midi);
-        });
+        (&mut usb_dev, &mut midi).lock(
+            |usb_dev: &mut UsbDevice<'static, UsbBusType>,
+             midi: &mut MidiClass<'static, UsbBusType>| {
+                usb_poll(usb_dev, midi);
+            },
+        );
     }
 
     #[task(binds = USB_LP_CAN_RX0, shared = [USB_DEV, MIDI])]
@@ -592,9 +624,12 @@ mod app {
         let mut usb_dev = cx.shared.USB_DEV;
         let mut midi = cx.shared.MIDI;
 
-        (&mut usb_dev, &mut midi).lock(|usb_dev, midi| {
-            usb_poll(usb_dev, midi);
-        });
+        (&mut usb_dev, &mut midi).lock(
+            |usb_dev: &mut UsbDevice<'static, UsbBusType>,
+             midi: &mut MidiClass<'static, UsbBusType>| {
+                usb_poll(usb_dev, midi);
+            },
+        );
     }
 
     fn usb_poll<B: bus::UsbBus>(

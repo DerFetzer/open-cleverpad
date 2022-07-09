@@ -27,7 +27,7 @@ mod app {
     use heapless::spsc::{Consumer, Producer, Queue};
     use stm32f1xx_hal::pac::Peripherals;
     use stm32f1xx_hal::{
-        gpio::gpioa::*,
+        // gpio::gpioa::*,
         gpio::*,
         pac,
         prelude::*,
@@ -65,7 +65,7 @@ mod app {
         prev_button_state: [u8; 11],
         button_event_c: Consumer<'static, ButtonEvent, 16>,
         // debug_pin_pa9: PA9<Output<PushPull>>,
-        debug_pin_pa10: PA10<Output<PushPull>>,
+        // debug_pin_pa10: PA10<Output<PushPull>>,
     }
 
     #[init(local = [BUTTON_QUEUE: Queue<ButtonEvent, 16> = Queue::new()])]
@@ -190,7 +190,7 @@ mod app {
 
         // Declare Debug-GPIOs
         let _debug_pa9 = gpioa.pa9.into_push_pull_output(&mut gpioa.crh);
-        let debug_pa10 = gpioa.pa10.into_push_pull_output(&mut gpioa.crh);
+        let _debug_pa10 = gpioa.pa10.into_push_pull_output(&mut gpioa.crh);
 
         // Queues
         let (button_event_p, button_event_c): (
@@ -251,7 +251,7 @@ mod app {
                 prev_button_state: [0; 11],
                 button_event_c,
                 // debug_pin_pa9: debug_pa9,
-                debug_pin_pa10: debug_pa10,
+                // debug_pin_pa10: debug_pa10,
             },
             init::Monotonics(mono),
         )
@@ -546,10 +546,8 @@ mod app {
         led_bank::spawn_after(LED_BANK_PERIOD.micros()).unwrap();
     }
 
-    #[task(priority = 2, local = [encoders, debug_pin_pa10], shared = [encoder_positions])]
+    #[task(priority = 2, local = [encoders], shared = [encoder_positions])]
     fn enc(mut cx: enc::Context) {
-        cx.local.debug_pin_pa10.set_high();
-
         let change: bool = cx.local.encoders.read();
 
         if change {
@@ -559,8 +557,6 @@ mod app {
         }
 
         enc::spawn_after(ENC_CAPTURE_PERIOD.micros()).unwrap();
-
-        cx.local.debug_pin_pa10.set_low();
     }
 
     #[task(local = [prev_encoder_positions], shared = [encoder_positions, encoder_parameter_type, midi])]

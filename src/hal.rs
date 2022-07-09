@@ -109,16 +109,20 @@ pub enum LedEventType {
     SwitchColor(LedColor),
 }
 
+pub const COLOR_BLACK: LedColor = LedColor { r: 0, g: 0, b: 0 };
+pub const COLOR_WHITE: LedColor = LedColor { r: 3, g: 3, b: 3 };
+pub const COLOR_YELLOW: LedColor = LedColor { r: 3, g: 3, b: 0 };
+pub const COLOR_AQUA: LedColor = LedColor { r: 0, g: 3, b: 3 };
+pub const COLOR_PURPLE: LedColor = LedColor { r: 3, g: 0, b: 3 };
+pub const COLOR_BLUE: LedColor = LedColor { r: 0, g: 0, b: 3 };
+pub const COLOR_GREEN: LedColor = LedColor { r: 0, g: 3, b: 0 };
+pub const COLOR_RED: LedColor = LedColor { r: 3, g: 0, b: 0 };
+
 #[derive(Clone, Copy, Debug)]
-pub enum LedColor {
-    Black = 0,
-    White = 16,
-    Yellow = 32,
-    Aqua = 48,
-    Purple = 64,
-    Blue = 80,
-    Green = 96,
-    Red = 112,
+pub struct LedColor {
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -129,62 +133,56 @@ pub struct Rgb {
 }
 
 impl LedColor {
-    pub fn from_value(v: u8) -> LedColor {
-        match v {
-            0..=15 => LedColor::Black,
-            16..=31 => LedColor::White,
-            32..=47 => LedColor::Yellow,
-            48..=63 => LedColor::Aqua,
-            64..=79 => LedColor::Purple,
-            80..=95 => LedColor::Blue,
-            96..=111 => LedColor::Green,
-            _ => LedColor::Red,
+    pub fn new(r: u8, g: u8, b: u8) -> Option<LedColor> {
+        if r < 4 && g < 4 && b < 4 {
+            Some(LedColor { r, g, b })
+        } else {
+            None
         }
     }
 
-    pub fn as_rgb(&self) -> Rgb {
-        match self {
-            LedColor::Black => Rgb {
-                r: false,
-                g: false,
-                b: false,
-            },
-            LedColor::White => Rgb {
-                r: true,
-                g: true,
-                b: true,
-            },
-            LedColor::Yellow => Rgb {
-                r: true,
-                g: true,
-                b: false,
-            },
-            LedColor::Aqua => Rgb {
-                r: false,
-                g: true,
-                b: true,
-            },
-            LedColor::Purple => Rgb {
-                r: true,
-                g: false,
-                b: true,
-            },
-            LedColor::Blue => Rgb {
-                r: false,
-                g: false,
-                b: true,
-            },
-            LedColor::Green => Rgb {
-                r: false,
-                g: true,
-                b: false,
-            },
-            LedColor::Red => Rgb {
-                r: true,
-                g: false,
-                b: false,
-            },
+    pub fn from_value(v: u8) -> LedColor {
+        LedColor::new(v & 0b11, (v & (0b11 << 2)) >> 2, (v & (0b11 << 4)) >> 4).unwrap()
+    }
+
+    pub fn as_rgb(&self) -> [Rgb; 4] {
+        let mut rgb = [Rgb {
+            r: false,
+            g: false,
+            b: false,
+        }; 4];
+
+        if self.r >= 1 {
+            rgb[0].r = true;
         }
+        if self.r >= 2 {
+            rgb[1].r = true;
+        }
+        if self.r >= 3 {
+            rgb[2].r = true;
+        }
+
+        if self.g >= 1 {
+            rgb[0].g = true;
+        }
+        if self.g >= 2 {
+            rgb[1].g = true;
+        }
+        if self.g >= 3 {
+            rgb[2].g = true;
+        }
+
+        if self.b >= 1 {
+            rgb[0].b = true;
+        }
+        if self.b >= 2 {
+            rgb[1].b = true;
+        }
+        if self.b >= 3 {
+            rgb[2].b = true;
+        }
+
+        rgb
     }
 }
 
@@ -193,7 +191,7 @@ impl LedEvent {
         LedEvent { btn, event }
     }
 
-    pub fn apply_to_banks(&self, banks: [u32; 8]) -> [u32; 8] {
+    pub fn apply_to_banks(&self, banks: [[u32; 8]; 4]) -> [[u32; 8]; 4] {
         let mut new_banks = banks;
 
         match (self.event, self.btn) {
@@ -201,40 +199,48 @@ impl LedEvent {
                 let bank = 7;
                 let bit = 32 - i;
 
-                if s {
-                    new_banks[bank] |= 1 << bit;
-                } else {
-                    new_banks[bank] &= !(1 << bit);
+                for new_bank in new_banks.iter_mut() {
+                    if s {
+                        new_bank[bank] |= 1 << bit;
+                    } else {
+                        new_bank[bank] &= !(1 << bit);
+                    }
                 }
             }
             (LedEventType::Switch(s), ButtonType::Arrow(d)) => {
                 let bank = 6;
                 let bit = 31 - d as u8;
 
-                if s {
-                    new_banks[bank] |= 1 << bit;
-                } else {
-                    new_banks[bank] &= !(1 << bit);
+                for new_bank in new_banks.iter_mut() {
+                    if s {
+                        new_bank[bank] |= 1 << bit;
+                    } else {
+                        new_bank[bank] &= !(1 << bit);
+                    }
                 }
             }
             (LedEventType::Switch(s), ButtonType::Mode(m)) => {
                 let bank = 6;
                 let bit = 27 - m as u8;
 
-                if s {
-                    new_banks[bank] |= 1 << bit;
-                } else {
-                    new_banks[bank] &= !(1 << bit);
+                for new_bank in new_banks.iter_mut() {
+                    if s {
+                        new_bank[bank] |= 1 << bit;
+                    } else {
+                        new_bank[bank] &= !(1 << bit);
+                    }
                 }
             }
             (LedEventType::Switch(s), ButtonType::Parameter(p)) => {
                 let bank = 6;
                 let bit = 23 - p as u8;
 
-                if s {
-                    new_banks[bank] |= 1 << bit;
-                } else {
-                    new_banks[bank] &= !(1 << bit);
+                for new_bank in new_banks.iter_mut() {
+                    if s {
+                        new_bank[bank] |= 1 << bit;
+                    } else {
+                        new_bank[bank] &= !(1 << bit);
+                    }
                 }
             }
             (LedEventType::SwitchColor(color), ButtonType::Pad { x, y }) => {
@@ -242,23 +248,26 @@ impl LedEvent {
 
                 let bit = 31 - (((y % 4) * 8) + x);
 
-                let Rgb { r, g, b } = color.as_rgb();
-                if r {
-                    new_banks[bank_r] |= 1 << bit;
-                } else {
-                    new_banks[bank_r] &= !(1 << bit);
-                }
+                for (new_bank, Rgb { r, g, b }) in
+                    new_banks.iter_mut().zip(color.as_rgb().into_iter())
+                {
+                    if r {
+                        new_bank[bank_r] |= 1 << bit;
+                    } else {
+                        new_bank[bank_r] &= !(1 << bit);
+                    }
 
-                if g {
-                    new_banks[bank_g] |= 1 << bit;
-                } else {
-                    new_banks[bank_g] &= !(1 << bit);
-                }
+                    if g {
+                        new_bank[bank_g] |= 1 << bit;
+                    } else {
+                        new_bank[bank_g] &= !(1 << bit);
+                    }
 
-                if b {
-                    new_banks[bank_b] |= 1 << bit;
-                } else {
-                    new_banks[bank_b] &= !(1 << bit);
+                    if b {
+                        new_bank[bank_b] |= 1 << bit;
+                    } else {
+                        new_bank[bank_b] &= !(1 << bit);
+                    }
                 }
             }
             _ => panic!("Invalid LED and button types!"),

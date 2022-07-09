@@ -269,39 +269,53 @@ pub struct EncoderPins {
 
 pub struct Leds {
     pins: LedPins,
-    banks: [u32; 8],
+    banks: [[u32; 8]; 4],
     current_bank: usize,
+    current_iteration: usize,
 }
 
 impl Leds {
     pub fn new(pins: LedPins) -> Self {
         Leds {
             pins,
-            banks: [0; 8],
+            banks: [[0; 8]; 4],
             current_bank: 0,
+            current_iteration: 0,
         }
     }
 
-    pub fn get_banks(&mut self) -> [u32; 8] {
+    pub fn get_banks(&mut self) -> [[u32; 8]; 4] {
         self.banks
     }
 
-    pub fn get_bank_value(&mut self, bank: usize) -> u32 {
-        self.banks[bank]
+    pub fn get_bank_value(&mut self, bank: usize) -> [u32; 4] {
+        [
+            self.banks[0][bank],
+            self.banks[1][bank],
+            self.banks[2][bank],
+            self.banks[3][bank],
+        ]
     }
 
-    pub fn set_banks(&mut self, banks: [u32; 8]) {
+    pub fn set_banks(&mut self, banks: [[u32; 8]; 4]) {
         self.banks = banks;
     }
 
-    pub fn set_bank_value(&mut self, bank: usize, value: u32) {
-        self.banks[bank] = value;
+    pub fn set_bank_value(&mut self, bank: usize, value: [u32; 4]) {
+        for (i, v) in value.into_iter().enumerate() {
+            self.banks[i][bank] = v;
+        }
     }
 
     pub fn write_next_bank(&mut self) {
         self.current_bank += 1;
         if self.current_bank == 8 {
             self.current_bank = 0;
+
+            self.current_iteration += 1;
+            if self.current_iteration == 4 {
+                self.current_iteration = 0;
+            }
         }
 
         self.pins.hs_en_l.set_high();
@@ -324,7 +338,7 @@ impl Leds {
         }
 
         for i in 0..32 {
-            if self.banks[self.current_bank] & (1 << i) == 0 {
+            if self.banks[self.current_iteration][self.current_bank] & (1 << i) == 0 {
                 self.pins.ls_dai.set_low();
             } else {
                 self.pins.ls_dai.set_high();

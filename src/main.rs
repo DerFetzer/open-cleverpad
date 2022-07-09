@@ -15,7 +15,8 @@ mod app {
     use crate::hal::ButtonEventEdge::{NegEdge, PosEdge};
     use crate::hal::{
         ButtonEvent, ButtonEventEdge, ButtonType, LedColor, LedEvent, LedEventType, ParameterType,
-        DIRECTION_TYPES, MODE_TYPES,
+        COLOR_AQUA, COLOR_BLACK, COLOR_BLUE, COLOR_GREEN, COLOR_PURPLE, COLOR_RED, COLOR_WHITE,
+        COLOR_YELLOW, DIRECTION_TYPES, MODE_TYPES,
     };
     use crate::hardware::{ButtonMatrix, ButtonMatrixPins, EncoderPins, Encoders, LedPins, Leds};
     use crate::midi::{ControlChange, MidiMessage, NoteOff, NoteOn};
@@ -39,7 +40,7 @@ mod app {
     #[monotonic(binds = SysTick, default = true)]
     type MyMono = DwtSystick<72_000_000>;
 
-    const LED_BANK_PERIOD: u32 = 1_000; // ~1kHz
+    const LED_BANK_PERIOD: u32 = 250; // ~4kHz
     const ENC_CAPTURE_PERIOD: u32 = 200; // ~5kHz
     const ENC_EVAL_PERIOD: u32 = 20_000; // ~50Hz
     const BUTTON_COL_PERIOD: u32 = 10_000; // ~.1kHz
@@ -270,7 +271,7 @@ mod app {
         });
 
         let mut master_channel: u8 = 1;
-        let mut master_channel_leds = [[0_u32; 8]; 8];
+        let mut master_channel_leds = [[[0_u32; 8]; 4]; 8];
 
         let master_led_event = LedEvent::new(ButtonType::Master(1), LedEventType::Switch(true));
 
@@ -309,11 +310,18 @@ mod app {
                             // switch MIDI channel for pads
                             cx.shared.LEDS.lock(|l: &mut Leds| {
                                 for i in 0..6 {
-                                    master_channel_leds[master_channel as usize - 1][i] =
-                                        l.get_bank_value(i);
+                                    for (j, v) in l.get_bank_value(i).into_iter().enumerate() {
+                                        master_channel_leds[master_channel as usize - 1][j][i] = v;
+                                    }
+
                                     l.set_bank_value(
                                         i,
-                                        master_channel_leds[channel as usize - 1][i],
+                                        [
+                                            master_channel_leds[channel as usize - 1][0][i],
+                                            master_channel_leds[channel as usize - 1][1][i],
+                                            master_channel_leds[channel as usize - 1][2][i],
+                                            master_channel_leds[channel as usize - 1][3][i],
+                                        ],
                                     );
                                 }
 
@@ -412,13 +420,13 @@ mod app {
                                 127 => {
                                     // show preset color depending on y, for Ardour compatibility
                                     match y {
-                                        0 => LedColor::Green,
-                                        1 => LedColor::Yellow,
-                                        2 => LedColor::Red,
-                                        3 => LedColor::Purple,
-                                        4 => LedColor::Aqua,
-                                        5 => LedColor::Blue,
-                                        6 | 7 => LedColor::White,
+                                        0 => COLOR_GREEN,
+                                        1 => COLOR_YELLOW,
+                                        2 => COLOR_RED,
+                                        3 => COLOR_PURPLE,
+                                        4 => COLOR_AQUA,
+                                        5 => COLOR_BLUE,
+                                        6 | 7 => COLOR_WHITE,
                                         _ => panic!("This should never happen!"),
                                     }
                                 }
@@ -466,7 +474,7 @@ mod app {
                             if x < 8 && y < 8 {
                                 led_event = Some(LedEvent::new(
                                     btn,
-                                    LedEventType::SwitchColor(LedColor::Black),
+                                    LedEventType::SwitchColor(COLOR_BLACK),
                                 ));
                                 channel = note_off.channel + 1;
                             }

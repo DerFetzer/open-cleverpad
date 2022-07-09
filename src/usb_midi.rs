@@ -21,8 +21,8 @@ pub struct MidiClass<'a, B: UsbBus> {
     ms_if: InterfaceNumber,
     read_ep: EndpointOut<'a, B>,
     write_ep: EndpointIn<'a, B>,
-    read_queue: Queue<[u8; 4], 64>,
-    write_queue: Queue<[u8; 4], 16>,
+    read_queue: Queue<[u8; 4], 256>,
+    write_queue: Queue<[u8; 4], 32>,
     need_zlp: bool,
 }
 

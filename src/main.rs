@@ -52,7 +52,7 @@ mod app {
         leds: Leds,
         encoder_positions: [i32; 8],
         encoder_parameter_type: ParameterType,
-        button_event_p: Producer<'static, ButtonEvent, 16>,
+        button_event_p: Producer<'static, ButtonEvent, 64>,
         usb_dev: UsbDevice<'static, UsbBusType>,
         midi: MidiClass<'static, UsbBusType>,
     }
@@ -63,12 +63,12 @@ mod app {
         button_matrix: ButtonMatrix,
         prev_encoder_positions: [i32; 8],
         prev_button_state: [u8; 11],
-        button_event_c: Consumer<'static, ButtonEvent, 16>,
+        button_event_c: Consumer<'static, ButtonEvent, 64>,
         // debug_pin_pa9: PA9<Output<PushPull>>,
         // debug_pin_pa10: PA10<Output<PushPull>>,
     }
 
-    #[init(local = [BUTTON_QUEUE: Queue<ButtonEvent, 16> = Queue::new()])]
+    #[init(local = [BUTTON_QUEUE: Queue<ButtonEvent, 64> = Queue::new()])]
     fn init(cx: init::Context) -> (Shared, Local, init::Monotonics) {
         static mut USB_BUS: Option<bus::UsbBusAllocator<UsbBusType>> = None;
 
@@ -194,8 +194,8 @@ mod app {
 
         // Queues
         let (button_event_p, button_event_c): (
-            Producer<'static, ButtonEvent, 16>,
-            Consumer<'static, ButtonEvent, 16>,
+            Producer<'static, ButtonEvent, 64>,
+            Consumer<'static, ButtonEvent, 64>,
         ) = cx.local.BUTTON_QUEUE.split();
 
         // USB
@@ -460,9 +460,7 @@ mod app {
                         }
                         _ => (), // ignore message
                     }
-                };
-
-                if let Some(note_off) = NoteOff::from_bytes(b) {
+                } else if let Some(note_off) = NoteOff::from_bytes(b) {
                     match note_off.channel {
                         0..=7 => {
                             let x = note_off.note % 8;
@@ -494,12 +492,10 @@ mod app {
                         }
                         _ => (), // ignore message
                     }
-                };
-
-                if let Some(cc) = ControlChange::from_bytes(b) {
+                } else if let Some(cc) = ControlChange::from_bytes(b) {
                     if cc.controller == 110 && cc.value < 8 {
                         cx.shared.button_event_p.lock(
-                            |bep: &mut Producer<'static, ButtonEvent, 16>| {
+                            |bep: &mut Producer<'static, ButtonEvent, 64>| {
                                 bep.enqueue(ButtonEvent {
                                     btn: ButtonType::Parameter(
                                         ParameterType::try_from(cc.value).unwrap(),
@@ -511,7 +507,7 @@ mod app {
                         )
                     } else if cc.controller == 111 && cc.value < 8 {
                         cx.shared.button_event_p.lock(
-                            |bep: &mut Producer<'static, ButtonEvent, 16>| {
+                            |bep: &mut Producer<'static, ButtonEvent, 64>| {
                                 bep.enqueue(ButtonEvent {
                                     btn: ButtonType::Master(cc.value + 1),
                                     event: ButtonEventEdge::PosEdge,
@@ -622,7 +618,7 @@ mod app {
 
                     if let Some(e) = edge {
                         cx.shared.button_event_p.lock(
-                            |bep: &mut Producer<'static, ButtonEvent, 16>| {
+                            |bep: &mut Producer<'static, ButtonEvent, 64>| {
                                 bep.enqueue(ButtonEvent::new(row, col as u8, e)).unwrap()
                             },
                         )

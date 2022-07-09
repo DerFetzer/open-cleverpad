@@ -2,7 +2,7 @@
 #![no_main]
 #![no_std]
 
-use panic_semihosting as _;
+use panic_reset as _;
 
 mod hal;
 mod hardware;

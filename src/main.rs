@@ -426,7 +426,7 @@ mod app {
                                         4 => COLOR_AQUA,
                                         5 => COLOR_BLUE,
                                         6 | 7 => COLOR_WHITE,
-                                        _ => panic!("This should never happen!"),
+                                        _ => unreachable!(),
                                     }
                                 }
                                 num => LedColor::from_value(num),

@@ -88,10 +88,10 @@ impl ButtonEvent {
             9 => match row {
                 0..=3 => ButtonType::Arrow(DIRECTION_TYPES[row as usize]),
                 4..=7 => ButtonType::Mode(MODE_TYPES[row as usize - 4]),
-                _ => panic!("This should never happen!"),
+                _ => unreachable!(),
             },
             10 => ButtonType::Parameter(PARAMETER_TYPES[row as usize]),
-            _ => panic!("This should never happen!"),
+            _ => unreachable!(),
         };
 
         ButtonEvent { btn, event }
@@ -270,7 +270,7 @@ impl LedEvent {
                     }
                 }
             }
-            _ => panic!("Invalid LED and button types!"),
+            _ => unreachable!(),
         };
 
         new_banks

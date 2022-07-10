@@ -66,7 +66,7 @@ impl ButtonMatrix {
                 8 => self.pins.col9.set_low(),
                 9 => self.pins.col10.set_low(),
                 10 => self.pins.col11.set_low(),
-                _ => panic!("This should never happen"),
+                _ => unreachable!(),
             };
             self.delay.delay_us(10_u32);
 
@@ -94,7 +94,7 @@ impl ButtonMatrix {
                 8 => self.pins.col9.set_high(),
                 9 => self.pins.col10.set_high(),
                 10 => self.pins.col11.set_high(),
-                _ => panic!("This should never happen"),
+                _ => unreachable!(),
             };
         }
     }

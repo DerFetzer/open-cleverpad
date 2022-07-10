@@ -5,7 +5,39 @@
 This project is developed and maintained by [DerFetzer][team].
 Feature and pull requests are very welcome!
 
-## Documentation
+## Features
+
+* All pads, encoders and the buttons at the bottom generate standard MIDI messages when used.
+* Pads support 64 colors instead of only 8 with the stock firmware.
+* All LEDs can be fully controlled via MIDI messages.
+* Left buttons set the channel for encoder messages.
+* Right buttons set the channel for the pads.
+* Switch the channels via MIDI messages.
+
+## MIDI Messages
+Have a look at the included [Ardour MIDI map][midimap] to get an idea of how it could be used.
+
+* Pads: `note_on/note_off channel=m note=0-64 velocity=127/0` where `m` can be set with the buttons on the right
+* Buttons at the bottom: `note_on/note_off channel=8/9 note=0-3 velocity=127/0`
+* Encoders: `control_change channel=n control=1-8 value=v time=0` where `n` can be set with the buttons on the left and `v` works according to `enc-l` [here][ardourmidi]
+* Set encoder channel: send `control_change, control=110, value=0-7`
+* Set pad channel: send `control_change, control=111, value=0-7`
+* Set LED color: send `note_on` with the same channel and note as the pad/button generates, `note_off` disables the LED with any values
+    * Buttons at the bottom: any `value` greater 0 enables the LED
+    * Pads: `value` is interpreted as `0b0bbggrr`
+
+## Installation
+
+* **[Only once]** This firmware is designed to be used with the [HID-bootloader][bootloader].
+    * Download the [repository][bootloader].
+    * Compile the bootloader by executing `make smartpad` inside `./bootloader/F1` folder.
+    * **Important: The original firmware will be lost after this step and cannot be restored!**
+    * Flash the resulting binary via SWD as described [here][kikpadflash] or with any other method you are comfortable with.
+* In order to enter bootloader mode you have to **push and hold the first pad in the third row during power up for about 1 second**.
+* Use the precompiled binary from the [bin](bin) folder or run `cargo objcopy --release -- --bin open-cleverpad -O binary open-cleverpad.bin` to generate the binary from source.
+* Flash the .bin file using `hid-flash` tool from `./cli` folder with something like the following: `hid-flash open-cleverpad.bin tty0`. Just use any serial device and ignore messages like `error, counldn't open [/dev/tty0]`.
+
+## Developer Documentation
 
 * The used STM32F103RBT6 unfortunately has flash read protection activated and
 there is a function that resets the microcontroller when there is activity on the SWD interface.
@@ -23,14 +55,6 @@ $ openocd -f /usr/share/openocd/scripts/interface/stlink-v1.cfg -f /usr/share/op
 ```
 
 * For reverse engineered information about the used hardware see [hardware](hardware) folder.
-
-* This firmware is designed to be used with the [HID-bootloader][bootloader].
-    * Compile the bootloader by executing `make smartpad` inside `./bootloader/F1` folder and flash the resulting binary via SWD.
-    * In order to enter bootloader mode you have to push and hold the first pad in the third row during power up for about 1 second.
-    * Use `cargo objcopy --release -- -O binary open-cleverpad.bin` to generate the binary.
-    * Flash the .bin file using `hid-flash` tool from `./cli` folder with something like the following: `hid-flash open-cleverpad.bin /dev/tty0`. Just use any serial device.
-
-* Have a look at the included [Ardour MIDI map][midimap] to get an idea of used MIDI messages.
 
 ## Dependencies
 
@@ -76,3 +100,5 @@ to intervene to uphold that code of conduct.
 [solenoid]: https://github.com/s0len0id
 [bootloader]: https://github.com/DerFetzer/STM32_HID_Bootloader
 [midimap]: /ardour/midi_maps/Open-CleverPAD.map
+[kikpadflash]: https://github.com/TheKikGen/kikpad#how-to-flash
+[ardourmidi]: https://manual.ardour.org/using-control-surfaces/generic-midi/working-with-encoders/

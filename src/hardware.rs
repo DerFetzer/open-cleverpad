@@ -307,7 +307,7 @@ impl Leds {
         }
     }
 
-    pub fn write_next_bank(&mut self) {
+    pub fn write_next_bank(&mut self) -> usize {
         self.current_bank += 1;
         if self.current_bank == 8 {
             self.current_bank = 0;
@@ -356,6 +356,8 @@ impl Leds {
 
         self.pins.ls_en_l.set_low();
         self.pins.hs_en_l.set_low();
+
+        self.current_iteration
     }
 }
 

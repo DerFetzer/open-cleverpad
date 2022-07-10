@@ -39,7 +39,7 @@ mod app {
     #[monotonic(binds = SysTick, default = true)]
     type MyMono = DwtSystick<72_000_000>;
 
-    const LED_BANK_PERIOD: u32 = 250; // ~4kHz
+    const LED_BANK_PERIOD: u32 = 1_000;
     const ENC_CAPTURE_PERIOD: u32 = 200; // ~5kHz
     const ENC_EVAL_PERIOD: u32 = 20_000; // ~50Hz
     const BUTTON_COL_PERIOD: u32 = 10_000; // ~.1kHz
@@ -535,11 +535,21 @@ mod app {
 
     #[task(priority = 3, shared = [leds])]
     fn led_bank(mut cx: led_bank::Context) {
-        cx.shared
+        let current_iteration: usize = cx
+            .shared
             .leds
             .lock(|leds: &mut Leds| leds.write_next_bank());
 
-        led_bank::spawn_after(LED_BANK_PERIOD.micros()).unwrap();
+        // Gamma correction (~2.8)
+        let delay = match current_iteration {
+            0 => LED_BANK_PERIOD.micros() / 50,
+            1 => LED_BANK_PERIOD.micros() / 50 * 6,
+            2 => LED_BANK_PERIOD.micros() / 50 * 15,
+            3 => LED_BANK_PERIOD.micros() / 50 * 28,
+            _ => unreachable!(),
+        };
+
+        led_bank::spawn_after(delay).unwrap();
     }
 
     #[task(priority = 2, local = [encoders], shared = [encoder_positions])]

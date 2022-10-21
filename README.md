@@ -30,7 +30,7 @@ Have a look at the included [Ardour MIDI map][midimap] to get an idea of how it 
 
 * **[Only once]** This firmware is designed to be used with the [HID-bootloader][bootloader].
     * Download the [repository][bootloader].
-    * Compile the bootloader by executing `make smartpad` inside `./bootloader/F1` folder.
+    * Compile the bootloader by executing `make smartpad` inside `./bootloader/F1` folder or use the precompiled binary from the [bin](bin) folder.
     * **Important: The original firmware will be lost after this step and cannot be restored!**
     * Flash the resulting binary via SWD as described [here][kikpadflash] or with any other method you are comfortable with.
 * In order to enter bootloader mode you have to **push and hold the first pad in the third row during power up for about 1 second**.

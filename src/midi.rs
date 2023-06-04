@@ -1,3 +1,6 @@
+use core::cmp::min;
+use num_enum::TryFromPrimitive;
+
 pub trait MidiMessage {
     fn to_bytes(&self) -> [u8; 4];
     fn from_bytes(bytes: [u8; 4]) -> Option<Self>
@@ -106,5 +109,49 @@ impl MidiMessage for ControlChange {
             }
             _ => None,
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromPrimitive)]
+#[repr(u8)]
+pub enum EncoderMode {
+    EncR = 0,
+    EncL,
+    Enc2,
+    EncB,
+}
+
+pub struct EncoderParameters {
+    pub mode: EncoderMode,
+    pub speed_multiplier: u8,
+}
+
+impl EncoderParameters {
+    pub fn diff_to_value(&self, diff: i32) -> u8 {
+        let offset: u8 = match diff.abs() {
+            1 => 1,
+            num => min(num * self.speed_multiplier as i32, 63) as u8,
+        };
+        let value = match self.mode {
+            EncoderMode::EncR => {
+                if diff.signum() != -1 {
+                    // most significant bit => direction
+                    offset | (1 << 6)
+                } else {
+                    offset
+                }
+            }
+            EncoderMode::EncL => {
+                if diff.signum() == -1 {
+                    // most significant bit => direction
+                    offset | (1 << 6)
+                } else {
+                    offset
+                }
+            }
+            EncoderMode::Enc2 => (offset as i32 * diff.signum()) as u8,
+            EncoderMode::EncB => (offset as i32 * diff.signum()).saturating_add(64) as u8,
+        };
+        value & 0x7F
     }
 }

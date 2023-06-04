@@ -529,7 +529,7 @@ mod app {
                                     *m = EncoderParameters { mode, ..*m }
                                 });
                         }
-                    } else if cc.controller == 113 && cc.value <= 33 {
+                    } else if cc.controller == 113 && cc.value > 0 && cc.value <= 33 {
                         cx.shared
                             .encoder_parameters
                             .lock(|m: &mut EncoderParameters| {

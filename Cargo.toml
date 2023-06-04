@@ -32,7 +32,7 @@ codegen-units = 1
 opt-level = "z"
 
 [dependencies.stm32f1xx-hal]
-version = "0.9.0"
+version = "0.10.0"
 features = ["stm32f103", "medium", "rt", "stm32-usbd"]
 
 [dependencies.cortex-m]
@@ -40,19 +40,19 @@ version = "0.7.5"
 features = ["inline-asm"]
 
 [dependencies.cortex-m-rt]
-version = "0.7.1"
+version = "0.7.3"
 features = ["device"]
 
 [dependencies.cortex-m-rtic]
-version = "1.1.3"
+version = "1.1.4"
 
 [dependencies]
 asm-delay = "0.9.0"
 embedded-hal = "0.2.7"
 panic-halt = "0.2.0"
-usb-device = "0.2.8"
+usb-device = "0.2.9"
 stm32-usbd = "0.6.0"
-heapless = "0.7.15"
+heapless = "0.7.16"
 dwt-systick-monotonic = "1.0.0"
-num_enum = { version = "0.5.7", default-features = false }
+num_enum = { version = "0.6.1", default-features = false }
 panic-reset = "0.1.1"

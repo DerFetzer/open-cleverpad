@@ -325,7 +325,7 @@ mod app {
                                 }
 
                                 let master_off_event = LedEvent::new(
-                                    ButtonType::Master(master_channel as u8),
+                                    ButtonType::Master(master_channel),
                                     LedEventType::Switch(false),
                                 );
                                 let master_on_event =

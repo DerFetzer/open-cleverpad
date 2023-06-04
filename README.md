@@ -19,7 +19,10 @@ Have a look at the included [Ardour MIDI map][midimap] to get an idea of how it 
 
 * Pads: `note_on/note_off channel=m note=0-64 velocity=127/0` where `m` can be set with the buttons on the right
 * Buttons at the bottom: `note_on/note_off channel=8/9 note=0-3 velocity=127/0`
-* Encoders: `control_change channel=n control=1-8 value=v time=0` where `n` can be set with the buttons on the left and `v` works according to `enc-l` [here][ardourmidi]
+* Encoders: `control_change channel=n control=1-8 value=v time=0` where `n` can be set with the buttons on the left and `v` works according to `enc-l` [here][ardourmidi] by default
+* Set encoder parameters:
+    * send `control_change control=112, value=0-3` to change the behavior of all encoders to `0=enc-r`, `1=enc-l`, `2=enc-2` and `3=enc-b` as described [here][ardourmidi]
+    * send `control_change control=113, value=1-33` to change the value multiplier of all encoders when they are moved fast (the default is 10)
 * Set encoder channel: send `control_change, control=110, value=0-7`
 * Set pad channel: send `control_change, control=111, value=0-7`
 * Set LED color: send `note_on` with the same channel and note as the pad/button generates, `note_off` disables the LED with any values

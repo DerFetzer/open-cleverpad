@@ -1,4 +1,3 @@
-use core::borrow::Borrow;
 use heapless::spsc::Queue;
 use usb_device::class_prelude::*;
 
@@ -48,11 +47,7 @@ impl<'a, B: UsbBus> MidiClass<'a, B> {
             self.need_zlp = true;
         }
 
-        match self.write_ep.write(data) {
-            Ok(count) => Ok(count),
-            Err(UsbError::WouldBlock) => Ok(0),
-            e => e,
-        }
+        self.write_ep.write(data)
     }
 
     pub fn read_to_queue(&mut self) -> usb_device::Result<usize> {
@@ -75,16 +70,22 @@ impl<'a, B: UsbBus> MidiClass<'a, B> {
     }
 
     pub fn write_queue_to_host(&mut self) -> usb_device::Result<usize> {
-        // TODO: In case of error content of queue is lost. Find better implementation!
         let mut data = [0_u8; 64];
         let mut i = 0;
 
-        while !self.write_queue_is_empty() {
+        while !self.write_queue_is_empty() && i < 64 / 4 {
             data[i * 4..(i * 4) + 4].copy_from_slice(&self.write_queue.dequeue().unwrap()[..]);
             i += 1;
         }
 
-        self.write(data[..4 * i].borrow())
+        let mut retry_counter = 0;
+        loop {
+            match self.write(&data[..4 * i]) {
+                Ok(size) => return Ok(size),
+                Err(UsbError::WouldBlock) if retry_counter < 100 => retry_counter += 1,
+                Err(e) => return Err(e),
+            }
+        }
     }
 
     pub fn enqueue(&mut self, data: [u8; 4]) -> Result<(), [u8; 4]> {

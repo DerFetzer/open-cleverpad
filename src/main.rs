@@ -686,7 +686,11 @@ mod app {
         midi: &mut usb_midi::MidiClass<'static, B>,
     ) -> bool {
         if !midi.write_queue_is_empty() {
-            midi.write_queue_to_host().unwrap();
+            match midi.write_queue_to_host() {
+                Ok(_) => {}
+                Err(UsbError::WouldBlock) => {} // If nothing is connected
+                Err(_) => panic!(),
+            }
         }
 
         if !usb_dev.poll(&mut [midi]) {

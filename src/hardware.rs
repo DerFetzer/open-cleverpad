@@ -13,6 +13,7 @@ pub struct ButtonMatrix {
     rows: [u8; 11],
     rows_neg1: [u8; 11],
     rows_neg2: [u8; 11],
+    debounced_rows: [u8; 11],
     delay: AsmDelay,
 }
 
@@ -23,6 +24,7 @@ impl ButtonMatrix {
             rows: [0; 11],
             rows_neg1: [0; 11],
             rows_neg2: [0; 11],
+            debounced_rows: [0; 11],
             delay,
         }
     }
@@ -36,17 +38,11 @@ impl ButtonMatrix {
     }
 
     pub fn get_debounced_row(&mut self, row_num: usize) -> u8 {
-        self.rows_neg2[row_num] & self.rows_neg1[row_num] & self.rows[row_num]
+        self.debounced_rows[row_num]
     }
 
     pub fn get_debounced_rows(&mut self) -> [u8; 11] {
-        let mut debounced_rows = [0_u8; 11];
-
-        for (i, row) in debounced_rows.iter_mut().enumerate() {
-            *row = self.rows_neg2[i] & self.rows_neg1[i] & self.rows[i]
-        }
-
-        debounced_rows
+        self.debounced_rows
     }
 
     pub fn read(&mut self) {
@@ -81,6 +77,13 @@ impl ButtonMatrix {
             row |= (self.pins.row8.is_low() as u8) << 7;
 
             self.rows[i] = row;
+
+            for (i, row) in self.debounced_rows.iter_mut().enumerate() {
+                *row = (self.rows[i] & *row)
+                    | (self.rows_neg1[i] & *row)
+                    | (self.rows_neg2[i] & *row)
+                    | (self.rows[i] & self.rows_neg1[i] & self.rows_neg2[i])
+            }
 
             match i {
                 0 => self.pins.col1.set_high(),

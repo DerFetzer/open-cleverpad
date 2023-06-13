@@ -24,6 +24,7 @@ mod app {
     use crate::usb_midi;
     use crate::usb_midi::MidiClass;
     use asm_delay::{bitrate, AsmDelay};
+    use cortex_m::peripheral::NVIC;
     use dwt_systick_monotonic::DwtSystick;
     use heapless::spsc::{Consumer, Producer, Queue};
     use stm32f1xx_hal::pac::Peripherals;
@@ -404,10 +405,12 @@ mod app {
             }
 
             // Handle midi messages
-            let message = cx
-                .shared
-                .midi
-                .lock(|m: &mut MidiClass<'static, UsbBusType>| m.dequeue());
+            let (message, has_space_for_packet) =
+                cx.shared
+                    .midi
+                    .lock(|m: &mut MidiClass<'static, UsbBusType>| {
+                        (m.dequeue(), m.read_queue_has_space_for_packet())
+                    });
 
             if let Some(b) = message {
                 let mut led_event = None;
@@ -538,6 +541,13 @@ mod app {
                                     ..*m
                                 }
                             });
+                    }
+                }
+                if has_space_for_packet {
+                    // There is enough capacity in the queue again.
+                    unsafe {
+                        NVIC::unmask(stm32f1xx_hal::pac::Interrupt::USB_LP_CAN_RX0);
+                        NVIC::unmask(stm32f1xx_hal::pac::Interrupt::USB_HP_CAN_TX);
                     }
                 }
 
@@ -697,6 +707,13 @@ mod app {
             return false;
         }
 
-        matches!(midi.read_to_queue(), Ok(len) if len > 0)
+        if !midi.read_queue_has_space_for_packet() {
+            // Disable USB interrupts to make clearing of the queue possible.
+            NVIC::mask(stm32f1xx_hal::pac::Interrupt::USB_LP_CAN_RX0);
+            NVIC::mask(stm32f1xx_hal::pac::Interrupt::USB_HP_CAN_TX);
+            false
+        } else {
+            matches!(midi.read_to_queue(), Ok(len) if len > 0)
+        }
     }
 }

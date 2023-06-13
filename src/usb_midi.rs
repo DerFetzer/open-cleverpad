@@ -20,7 +20,7 @@ pub struct MidiClass<'a, B: UsbBus> {
     ms_if: InterfaceNumber,
     read_ep: EndpointOut<'a, B>,
     write_ep: EndpointIn<'a, B>,
-    read_queue: Queue<[u8; 4], 256>,
+    read_queue: Queue<[u8; 4], 512>,
     write_queue: Queue<[u8; 4], 32>,
     need_zlp: bool,
 }
@@ -96,12 +96,17 @@ impl<'a, B: UsbBus> MidiClass<'a, B> {
         self.read_queue.dequeue()
     }
 
-    pub fn write_queue_is_empty(&mut self) -> bool {
+    pub fn write_queue_is_empty(&self) -> bool {
         self.write_queue.is_empty()
     }
 
-    pub fn read_queue_is_empty(&mut self) -> bool {
+    pub fn read_queue_is_empty(&self) -> bool {
         self.read_queue.is_empty()
+    }
+
+    pub fn read_queue_has_space_for_packet(&self) -> bool {
+        (self.read_queue.capacity() - self.read_queue.len())
+            >= self.read_ep.max_packet_size() as usize / 4
     }
 }
 

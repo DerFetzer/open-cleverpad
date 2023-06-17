@@ -119,8 +119,10 @@ pub enum EncoderMode {
     EncL,
     Enc2,
     EncB,
+    Abs,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct EncoderParameters {
     pub mode: EncoderMode,
     pub speed_multiplier: u8,
@@ -151,7 +153,17 @@ impl EncoderParameters {
             }
             EncoderMode::Enc2 => (offset as i32 * diff.signum()) as u8,
             EncoderMode::EncB => (offset as i32 * diff.signum()).saturating_add(64) as u8,
+            EncoderMode::Abs => unimplemented!(),
         };
         value & 0x7F
+    }
+    pub fn apply_diff_to_abs_value(&self, diff: i32, value: u8) -> u8 {
+        let offset: u8 = match diff.abs() {
+            1 => 1,
+            num => min(num * self.speed_multiplier as i32, 127) as u8,
+        };
+        value
+            .saturating_add_signed((offset as i32 * diff.signum().clamp(-127, 127)) as i8)
+            .clamp(0, 127)
     }
 }

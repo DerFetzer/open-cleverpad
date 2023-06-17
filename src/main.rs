@@ -54,7 +54,8 @@ mod app {
         leds: Leds,
         encoder_positions: [i32; 8],
         encoder_parameter_type: ParameterType,
-        encoder_parameters: EncoderParameters,
+        encoder_parameters: [EncoderParameters; 8],
+        abs_encoder_positions: [[u8; 8]; 8],
         button_event_p: Producer<'static, ButtonEvent, 64>,
         usb_dev: UsbDevice<'static, UsbBusType>,
         midi: MidiClass<'static, UsbBusType>,
@@ -243,10 +244,11 @@ mod app {
                 leds: Leds::new(led_pins),
                 encoder_positions: [0; 8],
                 encoder_parameter_type: ParameterType::Volume,
-                encoder_parameters: EncoderParameters {
+                encoder_parameters: [EncoderParameters {
                     mode: EncoderMode::EncL,
                     speed_multiplier: 10,
-                },
+                }; 8],
+                abs_encoder_positions: [[64; 8]; 8],
                 button_event_p,
                 usb_dev,
                 midi,
@@ -264,7 +266,7 @@ mod app {
         )
     }
 
-    #[idle(local = [button_event_c], shared = [encoder_positions, encoder_parameter_type, encoder_parameters, leds, midi, button_event_p])]
+    #[idle(local = [button_event_c], shared = [abs_encoder_positions, encoder_parameter_type, encoder_parameters, leds, midi, button_event_p])]
     fn idle(mut cx: idle::Context) -> ! {
         let parameter_led_event = LedEvent::new(
             ButtonType::Parameter(ParameterType::Volume),
@@ -502,7 +504,14 @@ mod app {
                         _ => (), // ignore message
                     }
                 } else if let Some(cc) = ControlChange::from_bytes(b) {
-                    if cc.controller == 110 && cc.value < 8 {
+                    if cc.controller > 0 && cc.controller < 9 {
+                        let encoder_type = cc.channel & 0b111;
+                        cx.shared
+                            .abs_encoder_positions
+                            .lock(|pos: &mut [[u8; 8]; 8]| {
+                                pos[encoder_type as usize][cc.controller as usize - 1] = cc.value;
+                            });
+                    } else if cc.controller == 110 && cc.value < 8 {
                         cx.shared.button_event_p.lock(
                             |bep: &mut Producer<'static, ButtonEvent, 64>| {
                                 bep.enqueue(ButtonEvent {
@@ -524,21 +533,26 @@ mod app {
                                 .unwrap()
                             },
                         )
-                    } else if cc.controller == 112 && cc.value < 4 {
-                        if let Ok(mode) = EncoderMode::try_from(cc.value) {
+                    } else if cc.controller == 112 {
+                        if let Ok(mode) = EncoderMode::try_from(cc.value & 0b111) {
+                            let parameter_type = cc.channel & 0b111;
                             cx.shared
                                 .encoder_parameters
-                                .lock(|m: &mut EncoderParameters| {
-                                    *m = EncoderParameters { mode, ..*m }
+                                .lock(|m: &mut [EncoderParameters; 8]| {
+                                    m[parameter_type as usize] = EncoderParameters {
+                                        mode,
+                                        ..m[parameter_type as usize]
+                                    }
                                 });
                         }
                     } else if cc.controller == 113 && cc.value > 0 && cc.value <= 33 {
+                        let parameter_type = cc.channel & 0b111;
                         cx.shared
                             .encoder_parameters
-                            .lock(|m: &mut EncoderParameters| {
-                                *m = EncoderParameters {
+                            .lock(|m: &mut [EncoderParameters; 8]| {
+                                m[parameter_type as usize] = EncoderParameters {
                                     speed_multiplier: cc.value,
-                                    ..*m
+                                    ..m[parameter_type as usize]
                                 }
                             });
                     }
@@ -598,7 +612,7 @@ mod app {
         enc::spawn_after(ENC_CAPTURE_PERIOD.micros()).unwrap();
     }
 
-    #[task(local = [prev_encoder_positions], shared = [encoder_positions, encoder_parameter_type, encoder_parameters, midi])]
+    #[task(local = [prev_encoder_positions], shared = [encoder_positions, abs_encoder_positions, encoder_parameter_type, encoder_parameters, midi])]
     fn enc_eval(mut cx: enc_eval::Context) {
         let new_encoder_positions = cx.shared.encoder_positions.lock(|&mut p: &mut [i32; 8]| p);
         let encoder_positions: [i32; 8] = *cx.local.prev_encoder_positions;
@@ -608,17 +622,30 @@ mod app {
             for i in 0..8 {
                 let diff: i32 = new_encoder_positions[i] - encoder_positions[i];
                 if diff != 0 {
-                    let midi = ControlChange::new(
+                    let parameter_type = cx
+                        .shared
+                        .encoder_parameter_type
+                        .lock(|t: &mut ParameterType| *t as u8);
+                    let encoder_parameters = cx
+                        .shared
+                        .encoder_parameters
+                        .lock(|p: &mut [EncoderParameters; 8]| p[parameter_type as usize]);
+                    let value = if encoder_parameters.mode != EncoderMode::Abs {
+                        encoder_parameters.diff_to_value(diff)
+                    } else {
                         cx.shared
-                            .encoder_parameter_type
-                            .lock(|t: &mut ParameterType| *t as u8),
-                        i as u8 + 1,
-                        cx.shared
-                            .encoder_parameters
-                            .lock(|m: &mut EncoderParameters| m.diff_to_value(diff)),
-                    )
-                    .unwrap()
-                    .to_bytes();
+                            .abs_encoder_positions
+                            .lock(|p: &mut [[u8; 8]; 8]| {
+                                let abs_value = p[parameter_type as usize][i];
+                                let new_abs_value =
+                                    encoder_parameters.apply_diff_to_abs_value(diff, abs_value);
+                                p[parameter_type as usize][i] = new_abs_value;
+                                new_abs_value
+                            })
+                    };
+                    let midi = ControlChange::new(parameter_type, i as u8 + 1, value)
+                        .unwrap()
+                        .to_bytes();
                     cx.shared
                         .midi
                         .lock(|m: &mut MidiClass<'static, UsbBusType>| m.enqueue(midi).unwrap());

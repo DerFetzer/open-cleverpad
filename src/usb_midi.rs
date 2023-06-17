@@ -1,7 +1,7 @@
 use heapless::spsc::Queue;
 use usb_device::class_prelude::*;
 
-pub const USB_CLASS_AUDIO: u8 = 0x01;
+const USB_CLASS_AUDIO: u8 = 0x01;
 const AUDIO_SUBCLASS_CONTROL: u8 = 0x01;
 const AUDIO_SUBCLASS_MS: u8 = 0x03;
 

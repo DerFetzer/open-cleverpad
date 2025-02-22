@@ -70,10 +70,8 @@ mod app {
         // debug_pin_pa10: PA10<Output<PushPull>>,
     }
 
-    #[init(local = [BUTTON_QUEUE: Queue<ButtonEvent, 64> = Queue::new()])]
+    #[init(local = [BUTTON_QUEUE: Queue<ButtonEvent, 64> = Queue::new(), USB_BUS: Option<usb_device::bus::UsbBusAllocator<UsbBusType>> = None])]
     fn init(cx: init::Context) -> (Shared, Local) {
-        static mut USB_BUS: Option<bus::UsbBusAllocator<UsbBusType>> = None;
-
         let dp: Peripherals = cx.device;
 
         // Take ownership over the raw flash and rcc devices and convert them into the corresponding
@@ -213,21 +211,19 @@ mod app {
             pin_dp: usb_dp,
         };
 
-        unsafe {
-            USB_BUS.replace(UsbBus::new(usb));
-        }
+        cx.local.USB_BUS.replace(UsbBus::new(usb));
+        let usb_bus = cx.local.USB_BUS.as_ref().unwrap();
 
-        let midi = usb_midi::MidiClass::new(unsafe { USB_BUS.as_ref().unwrap() });
+        let midi = usb_midi::MidiClass::new(usb_bus);
 
-        let usb_dev =
-            UsbDeviceBuilder::new(unsafe { USB_BUS.as_ref().unwrap() }, UsbVidPid(VID, PID))
-                .strings(&[StringDescriptors::new(LangID::EN)
-                    .manufacturer("derfetzer")
-                    .product("open-cleverpad")])
-                .unwrap()
-                .max_power(500)
-                .unwrap()
-                .build();
+        let usb_dev = UsbDeviceBuilder::new(usb_bus, UsbVidPid(VID, PID))
+            .strings(&[StringDescriptors::new(LangID::EN)
+                .manufacturer("derfetzer")
+                .product("open-cleverpad")])
+            .unwrap()
+            .max_power(500)
+            .unwrap()
+            .build();
 
         let button_delay = AsmDelay::new(bitrate::U32BitrateExt::mhz(72));
         let encoder_delay = AsmDelay::new(bitrate::U32BitrateExt::mhz(72));

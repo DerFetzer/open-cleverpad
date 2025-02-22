@@ -549,6 +549,7 @@ mod app {
     #[task(priority = 3, shared = [leds])]
     async fn led_bank(mut cx: led_bank::Context) {
         loop {
+            let baseline = Mono::now();
             let current_iteration: usize = cx.shared.leds.lock(|leds| leds.write_next_bank());
 
             // Gamma correction (~2.8)
@@ -560,13 +561,14 @@ mod app {
                 _ => unreachable!(),
             };
 
-            Mono::delay(delay).await;
+            Mono::delay_until(baseline + delay).await;
         }
     }
 
     #[task(priority = 2, local = [encoders], shared = [encoder_positions])]
     async fn enc(mut cx: enc::Context) {
         loop {
+            let baseline = Mono::now();
             let change: bool = cx.local.encoders.read();
 
             if change {
@@ -575,13 +577,14 @@ mod app {
                     .lock(|pos| *pos = cx.local.encoders.get_positions());
             }
 
-            Mono::delay(ENC_CAPTURE_PERIOD.micros()).await;
+            Mono::delay_until(baseline + ENC_CAPTURE_PERIOD.micros()).await;
         }
     }
 
     #[task(priority = 1, local = [prev_encoder_positions], shared = [encoder_positions, abs_encoder_positions, encoder_parameter_type, encoder_parameters, midi])]
     async fn enc_eval(mut cx: enc_eval::Context) {
         loop {
+            let baseline = Mono::now();
             let new_encoder_positions = cx.shared.encoder_positions.lock(|&mut p| p);
             let encoder_positions: [i32; 8] = *cx.local.prev_encoder_positions;
 
@@ -616,7 +619,7 @@ mod app {
                 *cx.local.prev_encoder_positions = new_encoder_positions;
             }
 
-            Mono::delay(ENC_EVAL_PERIOD.micros()).await;
+            Mono::delay_until(baseline + ENC_EVAL_PERIOD.micros()).await;
         }
     }
 

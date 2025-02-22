@@ -2,6 +2,7 @@
 #![no_std]
 
 use panic_reset as _;
+//use panic_halt as _;
 
 mod hal;
 mod hardware;
@@ -37,7 +38,7 @@ mod app {
     use usb_device::bus;
     use usb_device::prelude::*;
 
-    systick_monotonic!(Mono, 10_000);
+    systick_monotonic!(Mono, 100_000);
 
     const LED_BANK_PERIOD: u32 = 1_000;
     const ENC_CAPTURE_PERIOD: u32 = 200; // ~5kHz
@@ -79,8 +80,6 @@ mod app {
         let mut flash = dp.FLASH.constrain();
         let rcc = dp.RCC.constrain();
 
-        Mono::start(cx.core.SYST, 72_000_000);
-
         // Freeze the configuration of all the clocks in the system and store the frozen frequencies
         // in `clocks`
         let clocks = rcc
@@ -91,6 +90,8 @@ mod app {
             .freeze(&mut flash.acr);
 
         assert!(clocks.usbclk_valid());
+
+        Mono::start(cx.core.SYST, 72_000_000);
 
         let mut afio = dp.AFIO.constrain();
 
@@ -621,34 +622,36 @@ mod app {
 
     #[task(priority = 2, local = [button_matrix, prev_button_state], shared = [button_event_p])]
     async fn button(mut cx: button::Context) {
-        cx.local.button_matrix.read();
+        loop {
+            cx.local.button_matrix.read();
 
-        let deb_rows: [u8; 11] = cx.local.button_matrix.get_debounced_rows();
+            let deb_rows: [u8; 11] = cx.local.button_matrix.get_debounced_rows();
 
-        if deb_rows != *cx.local.prev_button_state {
-            for (col, deb_row) in deb_rows.iter().enumerate() {
-                for row in 0..8 {
-                    let edge = match (
-                        ((cx.local.prev_button_state[col] >> row) & 1),
-                        ((deb_row >> row) & 1),
-                    ) {
-                        (0, 1) => Some(PosEdge),
-                        (1, 0) => Some(NegEdge),
-                        _ => None,
-                    };
+            if deb_rows != *cx.local.prev_button_state {
+                for (col, deb_row) in deb_rows.iter().enumerate() {
+                    for row in 0..8 {
+                        let edge = match (
+                            ((cx.local.prev_button_state[col] >> row) & 1),
+                            ((deb_row >> row) & 1),
+                        ) {
+                            (0, 1) => Some(PosEdge),
+                            (1, 0) => Some(NegEdge),
+                            _ => None,
+                        };
 
-                    if let Some(e) = edge {
-                        cx.shared
-                            .button_event_p
-                            .lock(|bep| bep.enqueue(ButtonEvent::new(row, col as u8, e)).unwrap())
+                        if let Some(e) = edge {
+                            cx.shared.button_event_p.lock(|bep| {
+                                bep.enqueue(ButtonEvent::new(row, col as u8, e)).unwrap()
+                            })
+                        }
                     }
                 }
+
+                *cx.local.prev_button_state = deb_rows;
             }
 
-            *cx.local.prev_button_state = deb_rows;
+            Mono::delay(BUTTON_COL_PERIOD.micros()).await;
         }
-
-        Mono::delay(BUTTON_COL_PERIOD.micros()).await;
     }
 
     #[task(binds = USB_HP_CAN_TX, shared = [usb_dev, midi])]

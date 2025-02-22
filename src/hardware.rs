@@ -1,6 +1,6 @@
 use asm_delay::AsmDelay;
 use cortex_m::asm::delay;
-use embedded_hal::prelude::*;
+use embedded_hal::delay::DelayNs;
 use stm32f1xx_hal::gpio::gpioa::{PA0, PA1, PA2, PA3, PA4, PA5};
 use stm32f1xx_hal::gpio::gpiob::{
     PB0, PB1, PB10, PB12, PB13, PB14, PB15, PB2, PB3, PB4, PB5, PB6, PB7, PB8, PB9,

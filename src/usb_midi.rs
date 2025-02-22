@@ -25,7 +25,7 @@ pub struct MidiClass<'a, B: UsbBus> {
     need_zlp: bool,
 }
 
-impl<'a, B: UsbBus> MidiClass<'a, B> {
+impl<B: UsbBus> MidiClass<'_, B> {
     pub fn new(alloc: &UsbBusAllocator<B>) -> MidiClass<'_, B> {
         MidiClass {
             ac_if: alloc.interface(),

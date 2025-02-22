@@ -170,17 +170,17 @@ impl Encoders {
         self.b_neg1 = self.b;
 
         for i in 0..8 {
-            if i & 1 << 0 == 0 {
+            if i & (1 << 0) == 0 {
                 self.pins.a0.set_low();
             } else {
                 self.pins.a0.set_high();
             }
-            if i & 1 << 1 == 0 {
+            if i & (1 << 1) == 0 {
                 self.pins.a1.set_low();
             } else {
                 self.pins.a1.set_high();
             }
-            if i & 1 << 2 == 0 {
+            if i & (1 << 2) == 0 {
                 self.pins.a2.set_low();
             } else {
                 self.pins.a2.set_high();
@@ -201,9 +201,9 @@ impl Encoders {
             }
 
             let a_stable = match (
-                (self.a & 1 << i) > 0,
-                (self.a_neg1 & 1 << i) > 0,
-                (self.a_neg2 & 1 << i) > 0,
+                (self.a & (1 << i)) > 0,
+                (self.a_neg1 & (1 << i)) > 0,
+                (self.a_neg2 & (1 << i)) > 0,
             ) {
                 (false, false, false) => Some(false),
                 (true, true, true) => Some(true),
@@ -211,9 +211,9 @@ impl Encoders {
             };
 
             let b_stable = match (
-                (self.b & 1 << i) > 0,
-                (self.b_neg1 & 1 << i) > 0,
-                (self.b_neg2 & 1 << i) > 0,
+                (self.b & (1 << i)) > 0,
+                (self.b_neg1 & (1 << i)) > 0,
+                (self.b_neg2 & (1 << i)) > 0,
             ) {
                 (false, false, false) => Some(false),
                 (true, true, true) => Some(true),
@@ -223,8 +223,8 @@ impl Encoders {
             match (
                 a_stable,
                 b_stable,
-                (self.a_state & 1 << i) > 0,
-                (self.b_state & 1 << i) > 0,
+                (self.a_state & (1 << i)) > 0,
+                (self.b_state & (1 << i)) > 0,
             ) {
                 (Some(true), Some(true), false, true) => {
                     change = true;
@@ -316,17 +316,17 @@ impl Leds {
         self.pins.hs_en_l.set_high();
         self.pins.ls_en_l.set_high();
 
-        if self.current_bank & 1 << 0 == 0 {
+        if self.current_bank & (1 << 0) == 0 {
             self.pins.hs_a0.set_low();
         } else {
             self.pins.hs_a0.set_high();
         }
-        if self.current_bank & 1 << 1 == 0 {
+        if self.current_bank & (1 << 1) == 0 {
             self.pins.hs_a1.set_low();
         } else {
             self.pins.hs_a1.set_high();
         }
-        if self.current_bank & 1 << 2 == 0 {
+        if self.current_bank & (1 << 2) == 0 {
             self.pins.hs_a2.set_low();
         } else {
             self.pins.hs_a2.set_high();

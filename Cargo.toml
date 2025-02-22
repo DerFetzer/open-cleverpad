@@ -33,7 +33,8 @@ opt-level = "z"
 
 [dependencies.stm32f1xx-hal]
 version = "0.10.0"
-features = ["stm32f103", "medium", "rt", "stm32-usbd"]
+git = "https://github.com/stm32-rs/stm32f1xx-hal.git"
+features = ["stm32f103", "medium", "stm32-usbd"]
 
 [dependencies.cortex-m]
 version = "0.7.7"
@@ -42,15 +43,17 @@ version = "0.7.7"
 version = "0.7.5"
 features = ["device"]
 
-[dependencies.cortex-m-rtic]
-version = "1.1.4"
+[dependencies.rtic]
+version = "2.1.2"
+features = ["thumbv7-backend"]
 
 [dependencies]
+rtic-monotonics = { version = "2.0.3", features = ["cortex-m-systick"] }
 asm-delay = "1.0.0"
 embedded-hal = "1.0.0"
 panic-halt = "1.0.0"
-usb-device = "0.2.9"
-stm32-usbd = "0.6.0"
+usb-device = "0.3.2"
+stm32-usbd = "0.7.0"
 heapless = "0.7.17"
 dwt-systick-monotonic = "1.1.0"
 num_enum = { version = "0.7.3", default-features = false }

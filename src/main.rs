@@ -24,8 +24,8 @@ mod app {
     use crate::usb_midi::MidiClass;
     use asm_delay::{bitrate, AsmDelay};
     use cortex_m::peripheral::NVIC;
-    use dwt_systick_monotonic::DwtSystick;
     use heapless::spsc::{Consumer, Producer, Queue};
+    use rtic_monotonics::systick::prelude::*;
     use stm32f1xx_hal::pac::Peripherals;
     use stm32f1xx_hal::{
         // gpio::gpioa::*,
@@ -37,8 +37,7 @@ mod app {
     use usb_device::bus;
     use usb_device::prelude::*;
 
-    #[monotonic(binds = SysTick, default = true)]
-    type MyMono = DwtSystick<72_000_000>;
+    systick_monotonic!(Mono, 10_000);
 
     const LED_BANK_PERIOD: u32 = 1_000;
     const ENC_CAPTURE_PERIOD: u32 = 200; // ~5kHz
@@ -72,18 +71,17 @@ mod app {
     }
 
     #[init(local = [BUTTON_QUEUE: Queue<ButtonEvent, 64> = Queue::new()])]
-    fn init(cx: init::Context) -> (Shared, Local, init::Monotonics) {
+    fn init(cx: init::Context) -> (Shared, Local) {
         static mut USB_BUS: Option<bus::UsbBusAllocator<UsbBusType>> = None;
 
         let dp: Peripherals = cx.device;
-        let mut cp: rtic::export::Peripherals = cx.core;
-
-        cp.DWT.enable_cycle_counter();
 
         // Take ownership over the raw flash and rcc devices and convert them into the corresponding
         // HAL structs
         let mut flash = dp.FLASH.constrain();
         let rcc = dp.RCC.constrain();
+
+        Mono::start(cx.core.SYST, 72_000_000);
 
         // Freeze the configuration of all the clocks in the system and store the frozen frequencies
         // in `clocks`
@@ -223,15 +221,16 @@ mod app {
 
         let usb_dev =
             UsbDeviceBuilder::new(unsafe { USB_BUS.as_ref().unwrap() }, UsbVidPid(VID, PID))
-                .manufacturer("derfetzer")
-                .product("open-cleverpad")
+                .strings(&[StringDescriptors::new(LangID::EN)
+                    .manufacturer("derfetzer")
+                    .product("open-cleverpad")])
+                .unwrap()
                 .max_power(500)
+                .unwrap()
                 .build();
 
         let button_delay = AsmDelay::new(bitrate::U32BitrateExt::mhz(72));
         let encoder_delay = AsmDelay::new(bitrate::U32BitrateExt::mhz(72));
-
-        let mono = DwtSystick::new(&mut cp.DCB, cp.DWT, cp.SYST, clocks.sysclk().to_Hz());
 
         led_bank::spawn().unwrap();
         enc::spawn().unwrap();
@@ -261,7 +260,6 @@ mod app {
                 // debug_pin_pa9: debug_pa9,
                 // debug_pin_pa10: debug_pa10,
             },
-            init::Monotonics(mono),
         )
     }
 
@@ -552,75 +550,81 @@ mod app {
     }
 
     #[task(priority = 3, shared = [leds])]
-    fn led_bank(mut cx: led_bank::Context) {
-        let current_iteration: usize = cx.shared.leds.lock(|leds| leds.write_next_bank());
+    async fn led_bank(mut cx: led_bank::Context) {
+        loop {
+            let current_iteration: usize = cx.shared.leds.lock(|leds| leds.write_next_bank());
 
-        // Gamma correction (~2.8)
-        let delay = match current_iteration {
-            0 => LED_BANK_PERIOD.micros() / 50,
-            1 => LED_BANK_PERIOD.micros() / 50 * 6,
-            2 => LED_BANK_PERIOD.micros() / 50 * 15,
-            3 => LED_BANK_PERIOD.micros() / 50 * 28,
-            _ => unreachable!(),
-        };
+            // Gamma correction (~2.8)
+            let delay = match current_iteration {
+                0 => LED_BANK_PERIOD.micros() / 50,
+                1 => LED_BANK_PERIOD.micros() / 50 * 6,
+                2 => LED_BANK_PERIOD.micros() / 50 * 15,
+                3 => LED_BANK_PERIOD.micros() / 50 * 28,
+                _ => unreachable!(),
+            };
 
-        led_bank::spawn_after(delay).unwrap();
+            Mono::delay(delay).await;
+        }
     }
 
     #[task(priority = 2, local = [encoders], shared = [encoder_positions])]
-    fn enc(mut cx: enc::Context) {
-        let change: bool = cx.local.encoders.read();
+    async fn enc(mut cx: enc::Context) {
+        loop {
+            let change: bool = cx.local.encoders.read();
 
-        if change {
-            cx.shared
-                .encoder_positions
-                .lock(|pos| *pos = cx.local.encoders.get_positions());
+            if change {
+                cx.shared
+                    .encoder_positions
+                    .lock(|pos| *pos = cx.local.encoders.get_positions());
+            }
+
+            Mono::delay(ENC_CAPTURE_PERIOD.micros()).await;
         }
-
-        enc::spawn_after(ENC_CAPTURE_PERIOD.micros()).unwrap();
     }
 
-    #[task(local = [prev_encoder_positions], shared = [encoder_positions, abs_encoder_positions, encoder_parameter_type, encoder_parameters, midi])]
-    fn enc_eval(mut cx: enc_eval::Context) {
-        let new_encoder_positions = cx.shared.encoder_positions.lock(|&mut p| p);
-        let encoder_positions: [i32; 8] = *cx.local.prev_encoder_positions;
+    #[task(priority = 1, local = [prev_encoder_positions], shared = [encoder_positions, abs_encoder_positions, encoder_parameter_type, encoder_parameters, midi])]
+    async fn enc_eval(mut cx: enc_eval::Context) {
+        loop {
+            let new_encoder_positions = cx.shared.encoder_positions.lock(|&mut p| p);
+            let encoder_positions: [i32; 8] = *cx.local.prev_encoder_positions;
 
-        // Handle encoder changes
-        if new_encoder_positions != encoder_positions {
-            for i in 0..8 {
-                let diff: i32 = new_encoder_positions[i] - encoder_positions[i];
-                if diff != 0 {
-                    let parameter_type = cx.shared.encoder_parameter_type.lock(|t| *t as u8);
-                    let encoder_parameters = cx
-                        .shared
-                        .encoder_parameters
-                        .lock(|p| p[parameter_type as usize]);
-                    let value = if encoder_parameters.mode != EncoderMode::Abs {
-                        encoder_parameters.diff_to_value(diff)
-                    } else {
-                        cx.shared.abs_encoder_positions.lock(|p| {
-                            let abs_value = p[parameter_type as usize][i];
-                            let new_abs_value =
-                                encoder_parameters.apply_diff_to_abs_value(diff, abs_value);
-                            p[parameter_type as usize][i] = new_abs_value;
-                            new_abs_value
-                        })
-                    };
-                    let midi = ControlChange::new(parameter_type, i as u8 + 1, value)
-                        .unwrap()
-                        .to_bytes();
-                    cx.shared.midi.lock(|m| m.enqueue(midi).unwrap());
-                    rtic::pend(pac::Interrupt::USB_LP_CAN_RX0);
+            // Handle encoder changes
+            if new_encoder_positions != encoder_positions {
+                for i in 0..8 {
+                    let diff: i32 = new_encoder_positions[i] - encoder_positions[i];
+                    if diff != 0 {
+                        let parameter_type = cx.shared.encoder_parameter_type.lock(|t| *t as u8);
+                        let encoder_parameters = cx
+                            .shared
+                            .encoder_parameters
+                            .lock(|p| p[parameter_type as usize]);
+                        let value = if encoder_parameters.mode != EncoderMode::Abs {
+                            encoder_parameters.diff_to_value(diff)
+                        } else {
+                            cx.shared.abs_encoder_positions.lock(|p| {
+                                let abs_value = p[parameter_type as usize][i];
+                                let new_abs_value =
+                                    encoder_parameters.apply_diff_to_abs_value(diff, abs_value);
+                                p[parameter_type as usize][i] = new_abs_value;
+                                new_abs_value
+                            })
+                        };
+                        let midi = ControlChange::new(parameter_type, i as u8 + 1, value)
+                            .unwrap()
+                            .to_bytes();
+                        cx.shared.midi.lock(|m| m.enqueue(midi).unwrap());
+                        rtic::pend(pac::Interrupt::USB_LP_CAN_RX0);
+                    }
                 }
+                *cx.local.prev_encoder_positions = new_encoder_positions;
             }
-            *cx.local.prev_encoder_positions = new_encoder_positions;
-        }
 
-        enc_eval::spawn_after(ENC_EVAL_PERIOD.micros()).unwrap();
+            Mono::delay(ENC_EVAL_PERIOD.micros()).await;
+        }
     }
 
     #[task(priority = 2, local = [button_matrix, prev_button_state], shared = [button_event_p])]
-    fn button(mut cx: button::Context) {
+    async fn button(mut cx: button::Context) {
         cx.local.button_matrix.read();
 
         let deb_rows: [u8; 11] = cx.local.button_matrix.get_debounced_rows();
@@ -648,7 +652,7 @@ mod app {
             *cx.local.prev_button_state = deb_rows;
         }
 
-        button::spawn_after(BUTTON_COL_PERIOD.micros()).unwrap();
+        Mono::delay(BUTTON_COL_PERIOD.micros()).await;
     }
 
     #[task(binds = USB_HP_CAN_TX, shared = [usb_dev, midi])]

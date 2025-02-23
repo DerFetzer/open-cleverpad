@@ -6,6 +6,8 @@ use panic_reset as _;
 
 mod hal;
 mod hardware;
+#[allow(static_mut_refs)]
+mod log;
 mod midi;
 mod usb_midi;
 
@@ -21,8 +23,8 @@ mod app {
     use crate::midi::{
         ControlChange, EncoderMode, EncoderParameters, MidiMessage, NoteOff, NoteOn,
     };
-    use crate::usb_midi;
     use crate::usb_midi::MidiClass;
+    use crate::{log, usb_midi};
     use cortex_m::peripheral::NVIC;
     use heapless::spsc::{Consumer, Producer, Queue};
     use rtic_monotonics::systick::prelude::*;
@@ -36,6 +38,7 @@ mod app {
     };
     use usb_device::bus;
     use usb_device::prelude::*;
+    use usbd_serial::SerialPort;
 
     systick_monotonic!(Mono, 100_000);
 
@@ -57,6 +60,7 @@ mod app {
         button_event_p: Producer<'static, ButtonEvent, 64>,
         usb_dev: UsbDevice<'static, UsbBusType>,
         midi: MidiClass<'static, UsbBusType>,
+        serial: SerialPort<'static, UsbBusType>,
     }
 
     #[local]
@@ -214,6 +218,7 @@ mod app {
         cx.local.USB_BUS.replace(UsbBus::new(usb));
         let usb_bus = cx.local.USB_BUS.as_ref().unwrap();
 
+        let serial = SerialPort::new(usb_bus);
         let midi = usb_midi::MidiClass::new(usb_bus);
 
         let usb_dev = UsbDeviceBuilder::new(usb_bus, UsbVidPid(VID, PID))
@@ -243,6 +248,7 @@ mod app {
                 button_event_p,
                 usb_dev,
                 midi,
+                serial,
             },
             Local {
                 encoders: Encoders::new(encoder_pins),
@@ -281,6 +287,7 @@ mod app {
         loop {
             // Handle button events
             if let Some(e) = cx.local.button_event_c.dequeue() {
+                defmt::println!("Got button event: {}", e);
                 let on = match e.event {
                     ButtonEventEdge::NegEdge => false,
                     ButtonEventEdge::PosEdge => true,
@@ -653,29 +660,32 @@ mod app {
         }
     }
 
-    #[task(binds = USB_HP_CAN_TX, shared = [usb_dev, midi])]
+    #[task(binds = USB_HP_CAN_TX, shared = [usb_dev, midi, serial])]
     fn usb_hp_can_tx(cx: usb_hp_can_tx::Context) {
         let mut usb_dev = cx.shared.usb_dev;
         let mut midi = cx.shared.midi;
+        let mut serial = cx.shared.serial;
 
-        (&mut usb_dev, &mut midi).lock(|usb_dev, midi| {
-            usb_poll(usb_dev, midi);
+        (&mut usb_dev, &mut midi, &mut serial).lock(|usb_dev, midi, serial| {
+            usb_poll(usb_dev, midi, serial);
         });
     }
 
-    #[task(binds = USB_LP_CAN_RX0, shared = [usb_dev, midi])]
+    #[task(binds = USB_LP_CAN_RX0, shared = [usb_dev, midi, serial])]
     fn usb_lp_can_rx0(cx: usb_lp_can_rx0::Context) {
         let mut usb_dev = cx.shared.usb_dev;
         let mut midi = cx.shared.midi;
+        let mut serial = cx.shared.serial;
 
-        (&mut usb_dev, &mut midi).lock(|usb_dev, midi| {
-            usb_poll(usb_dev, midi);
+        (&mut usb_dev, &mut midi, &mut serial).lock(|usb_dev, midi, serial| {
+            usb_poll(usb_dev, midi, serial);
         });
     }
 
     fn usb_poll<B: bus::UsbBus>(
         usb_dev: &mut UsbDevice<'static, B>,
         midi: &mut usb_midi::MidiClass<'static, B>,
+        serial: &mut SerialPort<'static, B>,
     ) -> bool {
         if !midi.write_queue_is_empty() {
             match midi.write_queue_to_host() {
@@ -685,9 +695,18 @@ mod app {
             }
         }
 
-        if !usb_dev.poll(&mut [midi]) {
+        while let Some(buf) = log::get_queue().dequeue() {
+            if serial.write(buf.as_slice()) != Ok(buf.len()) {
+                break;
+            }
+        }
+
+        if !usb_dev.poll(&mut [serial, midi]) {
             return false;
         }
+
+        let mut serial_buf = [0; 64];
+        while serial.read(&mut serial_buf).is_ok() {}
 
         if !midi.read_queue_has_space_for_packet() {
             // Disable USB interrupts to make clearing of the queue possible.

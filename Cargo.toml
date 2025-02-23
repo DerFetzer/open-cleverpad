@@ -51,9 +51,12 @@ features = ["thumbv7-backend"]
 rtic-monotonics = { version = "2.0.3", features = ["cortex-m-systick"] }
 embedded-hal = "1.0.0"
 panic-halt = "1.0.0"
-usb-device = "0.3.2"
+usb-device = { version = "0.3.2", features = ["control-buffer-256"]}
 stm32-usbd = "0.7.0"
 heapless = "0.7.17"
 dwt-systick-monotonic = "1.1.0"
 num_enum = { version = "0.7.3", default-features = false }
 panic-reset = "0.1.1"
+usbd-serial = "0.2.2"
+defmt = "0.3.10"
+critical-section = "1.2.0"

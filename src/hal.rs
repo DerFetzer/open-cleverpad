@@ -1,7 +1,7 @@
 use cortex_m::asm::delay;
 use num_enum::TryFromPrimitive;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, defmt::Format)]
 pub enum ButtonType {
     Pad { x: u8, y: u8 },
     Master(u8),
@@ -10,7 +10,7 @@ pub enum ButtonType {
     Parameter(ParameterType),
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, defmt::Format)]
 pub enum Direction {
     Up = 0,
     Down,
@@ -18,7 +18,7 @@ pub enum Direction {
     Right,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, defmt::Format)]
 pub enum ModeType {
     Clip = 0,
     Mode1,
@@ -26,7 +26,7 @@ pub enum ModeType {
     Set,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromPrimitive)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromPrimitive, defmt::Format)]
 #[repr(u8)]
 pub enum ParameterType {
     Volume = 0,
@@ -39,13 +39,13 @@ pub enum ParameterType {
     Control4,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, defmt::Format)]
 pub enum ButtonEventEdge {
     PosEdge,
     NegEdge,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, defmt::Format)]
 pub struct ButtonEvent {
     pub btn: ButtonType,
     pub event: ButtonEventEdge,

@@ -15,9 +15,9 @@ mod usb_midi;
 mod app {
     use crate::hal::ButtonEventEdge::{NegEdge, PosEdge};
     use crate::hal::{
-        ButtonEvent, ButtonEventEdge, ButtonType, LedColor, LedEvent, LedEventType, ParameterType,
-        COLOR_AQUA, COLOR_BLACK, COLOR_BLUE, COLOR_GREEN, COLOR_PURPLE, COLOR_RED, COLOR_WHITE,
-        COLOR_YELLOW, DIRECTION_TYPES, MODE_TYPES,
+        ButtonEvent, ButtonEventEdge, ButtonType, COLOR_AQUA, COLOR_BLACK, COLOR_BLUE, COLOR_GREEN,
+        COLOR_PURPLE, COLOR_RED, COLOR_WHITE, COLOR_YELLOW, DIRECTION_TYPES, LedColor, LedEvent,
+        LedEventType, MODE_TYPES, ParameterType,
     };
     use crate::hardware::{ButtonMatrix, ButtonMatrixPins, EncoderPins, Encoders, LedPins, Leds};
     use crate::midi::{

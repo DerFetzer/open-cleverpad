@@ -2,9 +2,9 @@ use crate::hal::delay_us;
 use cortex_m::asm::delay;
 use stm32f1xx_hal::gpio::gpioa::{PA0, PA1, PA2, PA3, PA4, PA5};
 use stm32f1xx_hal::gpio::gpiob::{
-    PB0, PB1, PB10, PB12, PB13, PB14, PB15, PB2, PB3, PB4, PB5, PB6, PB7, PB8, PB9,
+    PB0, PB1, PB2, PB3, PB4, PB5, PB6, PB7, PB8, PB9, PB10, PB12, PB13, PB14, PB15,
 };
-use stm32f1xx_hal::gpio::gpioc::{PC0, PC1, PC10, PC11, PC12, PC13, PC14, PC15, PC2, PC8, PC9};
+use stm32f1xx_hal::gpio::gpioc::{PC0, PC1, PC2, PC8, PC9, PC10, PC11, PC12, PC13, PC14, PC15};
 use stm32f1xx_hal::gpio::{Floating, Input, OpenDrain, Output, PushPull};
 
 pub struct ButtonMatrix {

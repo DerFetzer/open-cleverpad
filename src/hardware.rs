@@ -1,6 +1,5 @@
-use asm_delay::AsmDelay;
+use crate::hal::delay_us;
 use cortex_m::asm::delay;
-use embedded_hal::delay::DelayNs;
 use stm32f1xx_hal::gpio::gpioa::{PA0, PA1, PA2, PA3, PA4, PA5};
 use stm32f1xx_hal::gpio::gpiob::{
     PB0, PB1, PB10, PB12, PB13, PB14, PB15, PB2, PB3, PB4, PB5, PB6, PB7, PB8, PB9,
@@ -14,18 +13,16 @@ pub struct ButtonMatrix {
     rows_neg1: [u8; 11],
     rows_neg2: [u8; 11],
     debounced_rows: [u8; 11],
-    delay: AsmDelay,
 }
 
 impl ButtonMatrix {
-    pub fn new(pins: ButtonMatrixPins, delay: AsmDelay) -> Self {
+    pub fn new(pins: ButtonMatrixPins) -> Self {
         ButtonMatrix {
             pins,
             rows: [0; 11],
             rows_neg1: [0; 11],
             rows_neg2: [0; 11],
             debounced_rows: [0; 11],
-            delay,
         }
     }
 
@@ -64,7 +61,7 @@ impl ButtonMatrix {
                 10 => self.pins.col11.set_low(),
                 _ => unreachable!(),
             };
-            self.delay.delay_us(10_u32);
+            delay_us(10);
 
             let mut row: u8 = 0;
             row |= self.pins.row1.is_low() as u8;
@@ -136,11 +133,10 @@ pub struct Encoders {
     b: u8,
     b_neg1: u8,
     b_neg2: u8,
-    delay: AsmDelay,
 }
 
 impl Encoders {
-    pub fn new(pins: EncoderPins, delay: AsmDelay) -> Self {
+    pub fn new(pins: EncoderPins) -> Self {
         Encoders {
             pins,
             positions: [0; 8],
@@ -152,7 +148,6 @@ impl Encoders {
             b: 0,
             b_neg1: 0,
             b_neg2: 0,
-            delay,
         }
     }
 
@@ -186,7 +181,7 @@ impl Encoders {
                 self.pins.a2.set_high();
             }
 
-            self.delay.delay_us(5_u32);
+            delay_us(5);
 
             if self.pins.a.is_low() {
                 self.a |= 1_u8 << i;

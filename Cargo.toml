@@ -49,7 +49,6 @@ features = ["thumbv7-backend"]
 
 [dependencies]
 rtic-monotonics = { version = "2.0.3", features = ["cortex-m-systick"] }
-asm-delay = "1.0.0"
 embedded-hal = "1.0.0"
 panic-halt = "1.0.0"
 usb-device = "0.3.2"

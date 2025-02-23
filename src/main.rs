@@ -23,7 +23,6 @@ mod app {
     };
     use crate::usb_midi;
     use crate::usb_midi::MidiClass;
-    use asm_delay::{bitrate, AsmDelay};
     use cortex_m::peripheral::NVIC;
     use heapless::spsc::{Consumer, Producer, Queue};
     use rtic_monotonics::systick::prelude::*;
@@ -226,9 +225,6 @@ mod app {
             .unwrap()
             .build();
 
-        let button_delay = AsmDelay::new(bitrate::U32BitrateExt::mhz(72));
-        let encoder_delay = AsmDelay::new(bitrate::U32BitrateExt::mhz(72));
-
         led_bank::spawn().unwrap();
         enc::spawn().unwrap();
         enc_eval::spawn().unwrap();
@@ -249,8 +245,8 @@ mod app {
                 midi,
             },
             Local {
-                encoders: Encoders::new(encoder_pins, encoder_delay),
-                button_matrix: ButtonMatrix::new(button_pins, button_delay),
+                encoders: Encoders::new(encoder_pins),
+                button_matrix: ButtonMatrix::new(button_pins),
                 prev_encoder_positions: [0; 8],
                 prev_button_state: [0; 11],
                 button_event_c,

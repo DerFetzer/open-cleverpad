@@ -1,3 +1,4 @@
+use cortex_m::asm::delay;
 use num_enum::TryFromPrimitive;
 
 #[derive(Clone, Copy, Debug)]
@@ -275,4 +276,10 @@ impl LedEvent {
 
         new_banks
     }
+}
+
+pub fn delay_us(us: u32) {
+    const SYSCLK_HZ: u32 = 72_000_000;
+
+    delay(72 * us);
 }

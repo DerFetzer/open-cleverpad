@@ -8,7 +8,7 @@ pub trait MidiMessage {
         Self: Sized;
 }
 
-#[derive(Debug)]
+#[derive(Debug, defmt::Format)]
 pub struct NoteOn {
     pub channel: u8,
     pub note: u8,
@@ -44,6 +44,7 @@ impl MidiMessage for NoteOn {
     }
 }
 
+#[derive(Clone, Copy, defmt::Format)]
 pub struct NoteOff {
     pub channel: u8,
     pub note: u8,
@@ -72,6 +73,7 @@ impl MidiMessage for NoteOff {
     }
 }
 
+#[derive(Clone, Copy, defmt::Format)]
 pub struct ControlChange {
     pub channel: u8,
     pub controller: u8,
@@ -112,7 +114,7 @@ impl MidiMessage for ControlChange {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromPrimitive)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromPrimitive, defmt::Format)]
 #[repr(u8)]
 pub enum EncoderMode {
     EncR = 0,
@@ -122,7 +124,7 @@ pub enum EncoderMode {
     Abs,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, defmt::Format)]
 pub struct EncoderParameters {
     pub mode: EncoderMode,
     pub speed_multiplier: u8,

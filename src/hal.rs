@@ -98,13 +98,13 @@ impl ButtonEvent {
         ButtonEvent { btn, event }
     }
 }
-
+#[derive(Clone, Copy, defmt::Format)]
 pub struct LedEvent {
     btn: ButtonType,
     event: LedEventType,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, defmt::Format)]
 pub enum LedEventType {
     Switch(bool),
     SwitchColor(LedColor),
@@ -119,14 +119,14 @@ pub const COLOR_BLUE: LedColor = LedColor { r: 0, g: 0, b: 3 };
 pub const COLOR_GREEN: LedColor = LedColor { r: 0, g: 3, b: 0 };
 pub const COLOR_RED: LedColor = LedColor { r: 3, g: 0, b: 0 };
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, defmt::Format)]
 pub struct LedColor {
     pub r: u8,
     pub g: u8,
     pub b: u8,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, defmt::Format)]
 pub struct Rgb {
     pub r: bool,
     pub g: bool,
@@ -279,7 +279,7 @@ impl LedEvent {
 }
 
 pub fn delay_us(us: u32) {
-    const SYSCLK_HZ: u32 = 72_000_000;
+    const SYSCLK_MHZ: u32 = 72;
 
-    delay(72 * us);
+    delay(SYSCLK_MHZ * us);
 }

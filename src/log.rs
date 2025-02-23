@@ -1,8 +1,8 @@
+use crate::app::usb_poll_task;
 use core::sync::atomic::{AtomicBool, Ordering};
 use critical_section::RestoreState;
 use defmt::{global_logger, Encoder, Logger};
 use heapless::{mpmc::MpMcQueue, Vec};
-use stm32f1xx_hal::pac;
 
 const MAX_BYTES: usize = 128;
 
@@ -41,10 +41,9 @@ unsafe impl Logger for BufferLogger {
         }
         TAKEN.store(false, Ordering::Relaxed);
 
-        rtic::pend(pac::Interrupt::USB_LP_CAN_RX0);
-
         let restore = CS_RESTORE;
         critical_section::release(restore);
+        usb_poll_task::spawn().ok();
     }
 
     unsafe fn write(bytes: &[u8]) {

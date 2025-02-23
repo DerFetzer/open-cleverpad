@@ -1,8 +1,8 @@
 use crate::app::usb_poll_task;
 use core::sync::atomic::{AtomicBool, Ordering};
 use critical_section::RestoreState;
-use defmt::{global_logger, Encoder, Logger};
-use heapless::{mpmc::MpMcQueue, Vec};
+use defmt::{Encoder, Logger, global_logger};
+use heapless::{Vec, mpmc::MpMcQueue};
 
 const MAX_BYTES: usize = 128;
 
@@ -35,19 +35,25 @@ unsafe impl Logger for BufferLogger {
     }
 
     unsafe fn release() {
-        ENCODER.end_frame(write_to_queue);
+        unsafe {
+            ENCODER.end_frame(write_to_queue);
+        }
         if OVERFLOW.swap(false, Ordering::Relaxed) {
             while BUF.dequeue().is_some() {}
         }
         TAKEN.store(false, Ordering::Relaxed);
 
-        let restore = CS_RESTORE;
-        critical_section::release(restore);
+        unsafe {
+            let restore = CS_RESTORE;
+            critical_section::release(restore)
+        };
         usb_poll_task::spawn().ok();
     }
 
     unsafe fn write(bytes: &[u8]) {
-        ENCODER.write(bytes, write_to_queue);
+        unsafe {
+            ENCODER.write(bytes, write_to_queue);
+        }
     }
 
     unsafe fn flush() {}

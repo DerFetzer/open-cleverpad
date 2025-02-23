@@ -226,6 +226,9 @@ mod app {
                 .manufacturer("derfetzer")
                 .product("open-cleverpad")])
             .unwrap()
+            .composite_with_iads()
+            .max_packet_size_0(16)
+            .unwrap()
             .max_power(500)
             .unwrap()
             .build();

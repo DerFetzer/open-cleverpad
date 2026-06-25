@@ -5,6 +5,7 @@ use panic_reset as _;
 //use panic_halt as _;
 
 mod hal;
+mod handler;
 mod hardware;
 #[allow(static_mut_refs)]
 mod log;
@@ -19,9 +20,8 @@ mod app {
         COLOR_PURPLE, COLOR_RED, COLOR_WHITE, COLOR_YELLOW, DIRECTION_TYPES, LedEvent,
         LedEventType, MODE_TYPES, PadColor, ParameterType,
     };
-    use crate::hardware::{
-        Bank, ButtonMatrix, ButtonMatrixPins, EncoderPins, Encoders, LedPins, Leds, LedsState,
-    };
+    use crate::handler::PadLedHandler;
+    use crate::hardware::{ButtonMatrix, ButtonMatrixPins, EncoderPins, Encoders, LedPins, Leds};
     use crate::midi::{
         ControlChange, EncoderMode, EncoderParameters, MidiMessage, NoteOff, NoteOn,
     };
@@ -278,14 +278,11 @@ mod app {
             l.set_state(parameter_led_event.apply_to_leds_state(banks));
         });
 
-        let mut master_channel: u8 = 1;
-        let mut master_channel_leds_state = [LedsState::default(); 8];
-
-        let master_led_event = LedEvent::new(ButtonType::Master(1), LedEventType::Switch(true));
-
-        cx.shared.leds.lock(|l| {
-            let banks = l.get_state();
-            l.set_state(master_led_event.apply_to_leds_state(banks));
+        let mut pad_handler = cx.shared.leds.lock(|l| {
+            let mut leds_state = l.get_state();
+            let pads_handler = PadLedHandler::new(&mut leds_state);
+            l.set_state(leds_state);
+            pads_handler
         });
 
         loop {
@@ -299,14 +296,7 @@ mod app {
                 match e.btn {
                     // send midi
                     ButtonType::Pad { x, y } => {
-                        let midi = match on {
-                            true => NoteOn::new(master_channel - 1, y * 8 + x, 127)
-                                .unwrap()
-                                .to_bytes(),
-                            false => NoteOff::new(master_channel - 1, y * 8 + x)
-                                .unwrap()
-                                .to_bytes(),
-                        };
+                        let midi = pad_handler.handle_pad_button_event(x, y, on);
                         cx.shared.midi.lock(|m| m.enqueue(midi).unwrap());
                         usb_poll_task::spawn().ok();
                     }
@@ -314,36 +304,7 @@ mod app {
                         if on {
                             // switch midi channel for pads
                             cx.shared.leds.lock(|l| {
-                                // Set channel LED state for all Pad banks
-                                for i in 0..Bank::C0 as usize {
-                                    l.set_bank_slot_values(
-                                        i,
-                                        [
-                                            master_channel_leds_state[new_channel as usize - 1].0
-                                                [0][i],
-                                            master_channel_leds_state[new_channel as usize - 1].0
-                                                [1][i],
-                                            master_channel_leds_state[new_channel as usize - 1].0
-                                                [2][i],
-                                            master_channel_leds_state[new_channel as usize - 1].0
-                                                [3][i],
-                                        ],
-                                    );
-                                }
-
-                                let master_off_event = LedEvent::new(
-                                    ButtonType::Master(master_channel),
-                                    LedEventType::Switch(false),
-                                );
-                                let master_on_event =
-                                    LedEvent::new(e.btn, LedEventType::Switch(true));
-
-                                let mut banks = l.get_state();
-                                banks = master_off_event.apply_to_leds_state(banks);
-                                banks = master_on_event.apply_to_leds_state(banks);
-                                l.set_state(banks);
-
-                                master_channel = new_channel;
+                                pad_handler.handle_master_button_event(e, l, new_channel);
                             })
                         }
                     }
@@ -401,7 +362,7 @@ mod app {
             if let Some(b) = message {
                 defmt::info!("Got midi message: {}", message);
                 let mut led_event = None;
-                let mut channel = 0;
+                let mut channel = pad_handler.get_current_channel();
 
                 if let Some(note_on) = NoteOn::from_bytes(b) {
                     defmt::info!("{}", note_on);
@@ -436,8 +397,6 @@ mod app {
                             }
                         }
                         8 if note_on.note < 4 => {
-                            channel = master_channel;
-
                             let btn = ButtonType::Arrow(DIRECTION_TYPES[note_on.note as usize]);
 
                             led_event = Some(LedEvent::new(
@@ -446,8 +405,6 @@ mod app {
                             ))
                         }
                         9 if note_on.note < 4 => {
-                            channel = master_channel;
-
                             let btn = ButtonType::Mode(MODE_TYPES[note_on.note as usize]);
 
                             led_event = Some(LedEvent::new(
@@ -475,15 +432,11 @@ mod app {
                             }
                         }
                         8 => {
-                            channel = master_channel;
-
                             let btn = ButtonType::Arrow(DIRECTION_TYPES[note_off.note as usize]);
 
                             led_event = Some(LedEvent::new(btn, LedEventType::Switch(false)))
                         }
                         9 => {
-                            channel = master_channel;
-
                             let btn = ButtonType::Mode(MODE_TYPES[note_off.note as usize]);
 
                             led_event = Some(LedEvent::new(btn, LedEventType::Switch(false)));
@@ -545,14 +498,9 @@ mod app {
 
                 if let Some(le) = led_event {
                     defmt::info!("Handle {}", le);
-                    if channel == master_channel {
-                        cx.shared.leds.lock(|l| {
-                            let banks = l.get_state();
-                            l.set_state(le.apply_to_leds_state(banks));
-                        });
-                    }
-                    master_channel_leds_state[channel as usize - 1] =
-                        le.apply_to_leds_state(master_channel_leds_state[channel as usize - 1])
+                    cx.shared
+                        .leds
+                        .lock(|leds| pad_handler.apply_led_event(le, channel, leds));
                 }
             }
         }

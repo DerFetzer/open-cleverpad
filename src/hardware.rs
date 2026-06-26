@@ -1,4 +1,4 @@
-use crate::hal::delay_us;
+use crate::hal::{ControlButton, ControlButtonLedEvent, LedEvent, PadLedEvent, Rgb, delay_us};
 use cortex_m::asm::delay;
 use stm32f1xx_hal::gpio::gpioa::{PA0, PA1, PA2, PA3, PA4, PA5};
 use stm32f1xx_hal::gpio::gpiob::{
@@ -258,27 +258,158 @@ pub struct EncoderPins {
 }
 
 pub const NUM_TIME_SLOTS: usize = 4;
-pub const NUM_BANKS: usize = 8;
+
+pub const NUM_PAD_BANKS: usize = 6;
+pub const NUM_BUTTON_BANKS: usize = 2;
+
+pub const NUM_BANKS: usize = NUM_PAD_BANKS + NUM_BUTTON_BANKS;
 
 #[derive(Clone, Copy)]
-#[repr(usize)]
 pub enum Bank {
+    Pad(PadBank),
+    Control(ControlButtonBank),
+}
+
+#[derive(Clone, Copy)]
+pub enum PadBank {
     B0 = 0,
     R0 = 1,
     G0 = 2,
     B1 = 3,
     R1 = 4,
     G1 = 5,
-    C0 = 6,
-    C1 = 7,
+}
+
+impl PadBank {
+    pub const fn all() -> [Self; 6] {
+        [Self::B0, Self::R0, Self::G0, Self::B1, Self::R1, Self::G1]
+    }
+}
+
+#[derive(Clone, Copy)]
+pub enum ControlButtonBank {
+    C0 = 0,
+    C1 = 1,
+}
+
+impl ControlButtonBank {
+    pub const fn all() -> [Self; 2] {
+        [Self::C0, Self::C1]
+    }
 }
 
 #[derive(Default, Copy, Clone)]
-pub struct LedsState(pub [[u32; NUM_BANKS]; NUM_TIME_SLOTS]);
+pub struct PadLedsState(pub [[u32; NUM_PAD_BANKS]; NUM_TIME_SLOTS]);
 
+impl PadLedsState {
+    pub fn apply_event(&mut self, event: PadLedEvent) {
+        let x = event.pad.x;
+        let y = event.pad.y;
+
+        let color = event.color;
+
+        let (bank_r, bank_g, bank_b) = if y < 4 {
+            (
+                PadBank::R0 as usize,
+                PadBank::G0 as usize,
+                PadBank::B0 as usize,
+            )
+        } else {
+            (
+                PadBank::R1 as usize,
+                PadBank::G1 as usize,
+                PadBank::B1 as usize,
+            )
+        };
+
+        let bit = 31 - (((y % 4) * 8) + x);
+
+        for (new_bank, Rgb { r, g, b }) in self.0.iter_mut().zip(color.as_rgb().into_iter()) {
+            if r {
+                new_bank[bank_r] |= 1 << bit;
+            } else {
+                new_bank[bank_r] &= !(1 << bit);
+            }
+
+            if g {
+                new_bank[bank_g] |= 1 << bit;
+            } else {
+                new_bank[bank_g] &= !(1 << bit);
+            }
+
+            if b {
+                new_bank[bank_b] |= 1 << bit;
+            } else {
+                new_bank[bank_b] &= !(1 << bit);
+            }
+        }
+    }
+}
+
+#[derive(Default, Copy, Clone)]
+pub struct ControlButtonLedsState(pub [[u32; NUM_BUTTON_BANKS]; NUM_TIME_SLOTS]);
+
+impl ControlButtonLedsState {
+    pub fn apply_event(&mut self, event: ControlButtonLedEvent) {
+        let on = event.on;
+
+        match event.btn {
+            ControlButton::Master(i) => {
+                let bank = ControlButtonBank::C1 as usize;
+                let bit = 32 - i;
+
+                for new_bank in self.0.iter_mut() {
+                    if on {
+                        new_bank[bank] |= 1 << bit;
+                    } else {
+                        new_bank[bank] &= !(1 << bit);
+                    }
+                }
+            }
+            ControlButton::Arrow(d) => {
+                let bank = ControlButtonBank::C0 as usize;
+
+                let bit = 31 - d as u8;
+
+                for new_bank in self.0.iter_mut() {
+                    if on {
+                        new_bank[bank] |= 1 << bit;
+                    } else {
+                        new_bank[bank] &= !(1 << bit);
+                    }
+                }
+            }
+            ControlButton::Mode(m) => {
+                let bank = ControlButtonBank::C0 as usize;
+                let bit = 27 - m as u8;
+
+                for new_bank in self.0.iter_mut() {
+                    if on {
+                        new_bank[bank] |= 1 << bit;
+                    } else {
+                        new_bank[bank] &= !(1 << bit);
+                    }
+                }
+            }
+            ControlButton::Parameter(p) => {
+                let bank = ControlButtonBank::C0 as usize;
+                let bit = 23 - p as u8;
+
+                for new_bank in self.0.iter_mut() {
+                    if on {
+                        new_bank[bank] |= 1 << bit;
+                    } else {
+                        new_bank[bank] &= !(1 << bit);
+                    }
+                }
+            }
+        }
+    }
+}
 pub struct Leds {
     pins: LedPins,
-    state: LedsState,
+    pad_state: PadLedsState,
+    control_button_state: ControlButtonLedsState,
     current_bank: usize,
     current_time_slot: usize,
 }
@@ -287,34 +418,75 @@ impl Leds {
     pub fn new(pins: LedPins) -> Self {
         Leds {
             pins,
-            state: Default::default(),
+            pad_state: Default::default(),
+            control_button_state: Default::default(),
             current_bank: 0,
             current_time_slot: 0,
         }
     }
 
-    pub fn get_state(&mut self) -> LedsState {
-        self.state
+    pub fn get_pad_state(&mut self) -> PadLedsState {
+        self.pad_state
+    }
+
+    pub fn get_button_state(&mut self) -> ControlButtonLedsState {
+        self.control_button_state
+    }
+
+    pub fn apply_event(&mut self, event: LedEvent) {
+        match event {
+            LedEvent::Pad(pad_led_event) => self.apply_pad_event(pad_led_event),
+            LedEvent::ControlButton(control_button_led_event) => {
+                self.apply_control_button_event(control_button_led_event)
+            }
+        }
+    }
+
+    pub fn apply_control_button_event(&mut self, event: ControlButtonLedEvent) {
+        self.control_button_state.apply_event(event);
+    }
+
+    pub fn apply_pad_event(&mut self, event: PadLedEvent) {
+        self.pad_state.apply_event(event);
     }
 
     /// Gets the bank values for all time slots
-    pub fn get_bank_slot_values(&mut self, bank: usize) -> [u32; NUM_TIME_SLOTS] {
-        [
-            self.state.0[0][bank],
-            self.state.0[1][bank],
-            self.state.0[2][bank],
-            self.state.0[3][bank],
-        ]
+    pub fn get_bank_slot_values(&mut self, bank: Bank) -> [u32; NUM_TIME_SLOTS] {
+        match bank {
+            Bank::Pad(bank) => [
+                self.pad_state.0[0][bank as usize],
+                self.pad_state.0[1][bank as usize],
+                self.pad_state.0[2][bank as usize],
+                self.pad_state.0[3][bank as usize],
+            ],
+            Bank::Control(bank) => [
+                self.control_button_state.0[0][bank as usize],
+                self.control_button_state.0[1][bank as usize],
+                self.control_button_state.0[2][bank as usize],
+                self.control_button_state.0[3][bank as usize],
+            ],
+        }
     }
 
-    pub fn set_state(&mut self, state: LedsState) {
-        self.state = state;
+    pub fn set_pad_state(&mut self, state: PadLedsState) {
+        self.pad_state = state;
+    }
+
+    pub fn set_button_state(&mut self, state: ControlButtonLedsState) {
+        self.control_button_state = state;
     }
 
     /// Sets the bank values for all time slots
-    pub fn set_bank_slot_values(&mut self, bank: usize, value: [u32; NUM_TIME_SLOTS]) {
+    pub fn set_bank_slot_values(&mut self, bank: Bank, value: [u32; NUM_TIME_SLOTS]) {
         for (i, v) in value.into_iter().enumerate() {
-            self.state.0[i][bank] = v;
+            match bank {
+                Bank::Pad(bank) => {
+                    self.pad_state.0[i][bank as usize] = v;
+                }
+                Bank::Control(bank) => {
+                    self.control_button_state.0[i][bank as usize] = v;
+                }
+            }
         }
     }
 
@@ -333,6 +505,7 @@ impl Leds {
         self.pins.hs_en_l.set_high();
         self.pins.ls_en_l.set_high();
 
+        // Set mux address -> enable common anode
         if self.current_bank & (1 << 0) == 0 {
             self.pins.hs_a0.set_low();
         } else {
@@ -349,8 +522,16 @@ impl Leds {
             self.pins.hs_a2.set_high();
         }
 
+        // Shift values into LED drivers
         for i in 0..32 {
-            if self.state.0[self.current_time_slot][self.current_bank] & (1 << i) == 0 {
+            let bank_value = if self.current_bank < NUM_PAD_BANKS {
+                self.pad_state.0[self.current_time_slot][self.current_bank]
+            } else {
+                self.control_button_state.0[self.current_time_slot]
+                    [self.current_bank - NUM_PAD_BANKS]
+            };
+
+            if bank_value & (1 << i) == 0 {
                 self.pins.ls_dai.set_low();
             } else {
                 self.pins.ls_dai.set_high();

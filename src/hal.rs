@@ -1,15 +1,24 @@
 use cortex_m::asm::delay;
 use num_enum::TryFromPrimitive;
 
-use crate::hardware::{Bank, LedsState};
+#[derive(Clone, Copy, Debug, defmt::Format)]
+pub enum Button {
+    Pad(Pad),
+    Control(ControlButton),
+}
 
 #[derive(Clone, Copy, Debug, defmt::Format)]
-pub enum ButtonType {
-    Pad { x: u8, y: u8 },
+pub struct Pad {
+    pub x: u8,
+    pub y: u8,
+}
+
+#[derive(Clone, Copy, Debug, defmt::Format)]
+pub enum ControlButton {
     Master(u8),
     Arrow(Direction),
-    Mode(ModeType),
-    Parameter(ParameterType),
+    Mode(Mode),
+    Parameter(Parameter),
 }
 
 #[derive(Clone, Copy, Debug, defmt::Format)]
@@ -21,7 +30,7 @@ pub enum Direction {
 }
 
 #[derive(Clone, Copy, Debug, defmt::Format)]
-pub enum ModeType {
+pub enum Mode {
     Clip = 0,
     Mode1,
     Mode2,
@@ -30,7 +39,7 @@ pub enum ModeType {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, TryFromPrimitive, defmt::Format)]
 #[repr(u8)]
-pub enum ParameterType {
+pub enum Parameter {
     Volume = 0,
     SendA,
     SendB,
@@ -47,21 +56,15 @@ pub enum ButtonEventEdge {
     NegEdge,
 }
 
-#[derive(Clone, Copy, Debug, defmt::Format)]
-pub struct ButtonEvent {
-    pub btn: ButtonType,
-    pub event: ButtonEventEdge,
-}
-
-pub static PARAMETER_TYPES: [ParameterType; 8] = [
-    ParameterType::Volume,
-    ParameterType::SendA,
-    ParameterType::SendB,
-    ParameterType::Pan,
-    ParameterType::Control1,
-    ParameterType::Control2,
-    ParameterType::Control3,
-    ParameterType::Control4,
+pub static PARAMETER_TYPES: [Parameter; 8] = [
+    Parameter::Volume,
+    Parameter::SendA,
+    Parameter::SendB,
+    Parameter::Pan,
+    Parameter::Control1,
+    Parameter::Control2,
+    Parameter::Control3,
+    Parameter::Control4,
 ];
 
 pub static DIRECTION_TYPES: [Direction; 4] = [
@@ -71,12 +74,13 @@ pub static DIRECTION_TYPES: [Direction; 4] = [
     Direction::Right,
 ];
 
-pub static MODE_TYPES: [ModeType; 4] = [
-    ModeType::Clip,
-    ModeType::Mode1,
-    ModeType::Mode2,
-    ModeType::Set,
-];
+pub static MODE_TYPES: [Mode; 4] = [Mode::Clip, Mode::Mode1, Mode::Mode2, Mode::Set];
+
+#[derive(Clone, Copy, Debug, defmt::Format)]
+pub struct ButtonEvent {
+    pub btn: Button,
+    pub event: ButtonEventEdge,
+}
 
 impl ButtonEvent {
     pub fn new(row: u8, col: u8, event: ButtonEventEdge) -> ButtonEvent {
@@ -85,31 +89,38 @@ impl ButtonEvent {
                 let x = row;
                 let y = col;
 
-                ButtonType::Pad { x, y }
+                Button::Pad(Pad { x, y })
             }
-            8 => ButtonType::Master(row + 1),
+            8 => Button::Control(ControlButton::Master(row + 1)),
             9 => match row {
-                0..=3 => ButtonType::Arrow(DIRECTION_TYPES[row as usize]),
-                4..=7 => ButtonType::Mode(MODE_TYPES[row as usize - 4]),
+                0..=3 => Button::Control(ControlButton::Arrow(DIRECTION_TYPES[row as usize])),
+                4..=7 => Button::Control(ControlButton::Mode(MODE_TYPES[row as usize - 4])),
                 _ => unreachable!(),
             },
-            10 => ButtonType::Parameter(PARAMETER_TYPES[row as usize]),
+            10 => Button::Control(ControlButton::Parameter(PARAMETER_TYPES[row as usize])),
             _ => unreachable!(),
         };
 
         ButtonEvent { btn, event }
     }
 }
+
 #[derive(Clone, Copy, defmt::Format)]
-pub struct LedEvent {
-    btn: ButtonType,
-    event: LedEventType,
+pub enum LedEvent {
+    Pad(PadLedEvent),
+    ControlButton(ControlButtonLedEvent),
 }
 
-#[derive(Clone, Copy, Debug, defmt::Format)]
-pub enum LedEventType {
-    Switch(bool),
-    SwitchColor(PadColor),
+#[derive(Clone, Copy, defmt::Format)]
+pub struct PadLedEvent {
+    pub pad: Pad,
+    pub color: PadColor,
+}
+
+#[derive(Clone, Copy, defmt::Format)]
+pub struct ControlButtonLedEvent {
+    pub btn: ControlButton,
+    pub on: bool,
 }
 
 pub const COLOR_BLACK: PadColor = PadColor { r: 0, g: 0, b: 0 };
@@ -197,102 +208,6 @@ impl PadColor {
         }
 
         rgb
-    }
-}
-
-impl LedEvent {
-    pub fn new(btn: ButtonType, event: LedEventType) -> LedEvent {
-        LedEvent { btn, event }
-    }
-
-    pub fn apply_to_leds_state(&self, state: LedsState) -> LedsState {
-        let mut new_banks = state;
-
-        match (self.event, self.btn) {
-            (LedEventType::Switch(s), ButtonType::Master(i)) => {
-                let bank = Bank::C1 as usize;
-                let bit = 32 - i;
-
-                for new_bank in new_banks.0.iter_mut() {
-                    if s {
-                        new_bank[bank] |= 1 << bit;
-                    } else {
-                        new_bank[bank] &= !(1 << bit);
-                    }
-                }
-            }
-            (LedEventType::Switch(s), ButtonType::Arrow(d)) => {
-                let bank = Bank::C0 as usize;
-
-                let bit = 31 - d as u8;
-
-                for new_bank in new_banks.0.iter_mut() {
-                    if s {
-                        new_bank[bank] |= 1 << bit;
-                    } else {
-                        new_bank[bank] &= !(1 << bit);
-                    }
-                }
-            }
-            (LedEventType::Switch(s), ButtonType::Mode(m)) => {
-                let bank = Bank::C0 as usize;
-                let bit = 27 - m as u8;
-
-                for new_bank in new_banks.0.iter_mut() {
-                    if s {
-                        new_bank[bank] |= 1 << bit;
-                    } else {
-                        new_bank[bank] &= !(1 << bit);
-                    }
-                }
-            }
-            (LedEventType::Switch(s), ButtonType::Parameter(p)) => {
-                let bank = Bank::C0 as usize;
-                let bit = 23 - p as u8;
-
-                for new_bank in new_banks.0.iter_mut() {
-                    if s {
-                        new_bank[bank] |= 1 << bit;
-                    } else {
-                        new_bank[bank] &= !(1 << bit);
-                    }
-                }
-            }
-            (LedEventType::SwitchColor(color), ButtonType::Pad { x, y }) => {
-                let (bank_r, bank_g, bank_b) = if y < 4 {
-                    (Bank::R0 as usize, Bank::G0 as usize, Bank::B0 as usize)
-                } else {
-                    (Bank::R1 as usize, Bank::G1 as usize, Bank::B1 as usize)
-                };
-
-                let bit = 31 - (((y % 4) * 8) + x);
-
-                for (new_bank, Rgb { r, g, b }) in
-                    new_banks.0.iter_mut().zip(color.as_rgb().into_iter())
-                {
-                    if r {
-                        new_bank[bank_r] |= 1 << bit;
-                    } else {
-                        new_bank[bank_r] &= !(1 << bit);
-                    }
-
-                    if g {
-                        new_bank[bank_g] |= 1 << bit;
-                    } else {
-                        new_bank[bank_g] &= !(1 << bit);
-                    }
-
-                    if b {
-                        new_bank[bank_b] |= 1 << bit;
-                    } else {
-                        new_bank[bank_b] &= !(1 << bit);
-                    }
-                }
-            }
-            _ => unreachable!(),
-        };
-
-        new_banks
     }
 }
 

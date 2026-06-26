@@ -16,9 +16,9 @@ mod usb_midi;
 mod app {
     use crate::hal::ButtonEventEdge::{NegEdge, PosEdge};
     use crate::hal::{
-        ButtonEvent, ButtonEventEdge, ButtonType, COLOR_AQUA, COLOR_BLACK, COLOR_BLUE, COLOR_GREEN,
-        COLOR_PURPLE, COLOR_RED, COLOR_WHITE, COLOR_YELLOW, DIRECTION_TYPES, LedEvent,
-        LedEventType, MODE_TYPES, PadColor, ParameterType,
+        Button, ButtonEvent, ButtonEventEdge, COLOR_AQUA, COLOR_BLACK, COLOR_BLUE, COLOR_GREEN,
+        COLOR_PURPLE, COLOR_RED, COLOR_WHITE, COLOR_YELLOW, ControlButton, ControlButtonLedEvent,
+        DIRECTION_TYPES, LedEvent, MODE_TYPES, Pad, PadColor, PadLedEvent, Parameter,
     };
     use crate::handler::PadLedHandler;
     use crate::hardware::{ButtonMatrix, ButtonMatrixPins, EncoderPins, Encoders, LedPins, Leds};
@@ -58,7 +58,7 @@ mod app {
     struct Shared {
         leds: Leds,
         encoder_positions: [i32; 8],
-        encoder_parameter_type: ParameterType,
+        encoder_parameter_type: Parameter,
         encoder_parameters: [EncoderParameters; 8],
         abs_encoder_positions: [[u8; 8]; 8],
         button_event_p: Producer<'static, ButtonEvent>,
@@ -243,7 +243,7 @@ mod app {
             Shared {
                 leds: Leds::new(led_pins),
                 encoder_positions: [0; 8],
-                encoder_parameter_type: ParameterType::Volume,
+                encoder_parameter_type: Parameter::Volume,
                 encoder_parameters: [EncoderParameters {
                     mode: EncoderMode::EncL,
                     speed_multiplier: 10,
@@ -268,22 +268,16 @@ mod app {
 
     #[idle(local = [button_event_c], shared = [abs_encoder_positions, encoder_parameter_type, encoder_parameters, leds, midi, button_event_p])]
     fn idle(mut cx: idle::Context) -> ! {
-        let parameter_led_event = LedEvent::new(
-            ButtonType::Parameter(ParameterType::Volume),
-            LedEventType::Switch(true),
-        );
+        let parameter_led_event = ControlButtonLedEvent {
+            btn: ControlButton::Parameter(Parameter::Volume),
+            on: true,
+        };
 
         cx.shared.leds.lock(|l| {
-            let banks = l.get_state();
-            l.set_state(parameter_led_event.apply_to_leds_state(banks));
+            l.apply_control_button_event(parameter_led_event);
         });
 
-        let mut pad_handler = cx.shared.leds.lock(|l| {
-            let mut leds_state = l.get_state();
-            let pads_handler = PadLedHandler::new(&mut leds_state);
-            l.set_state(leds_state);
-            pads_handler
-        });
+        let mut pad_handler = cx.shared.leds.lock(PadLedHandler::new);
 
         loop {
             // Handle button events
@@ -295,44 +289,44 @@ mod app {
                 };
                 match e.btn {
                     // send midi
-                    ButtonType::Pad { x, y } => {
+                    Button::Pad(Pad { x, y }) => {
                         let midi = pad_handler.handle_pad_button_event(x, y, on);
                         cx.shared.midi.lock(|m| m.enqueue(midi).unwrap());
                         usb_poll_task::spawn().ok();
                     }
-                    ButtonType::Master(new_channel) => {
+                    Button::Control(ControlButton::Master(new_channel)) => {
                         if on {
                             // switch midi channel for pads
                             cx.shared.leds.lock(|l| {
-                                pad_handler.handle_master_button_event(e, l, new_channel);
+                                pad_handler.handle_master_button_event(new_channel, l);
                             })
                         }
                     }
-                    ButtonType::Parameter(param) => {
+                    Button::Control(ControlButton::Parameter(param)) => {
                         if on {
                             let encoder_parameter_type =
                                 cx.shared.encoder_parameter_type.lock(|ept| *ept);
 
-                            let parameter_off_event = LedEvent::new(
-                                ButtonType::Parameter(encoder_parameter_type),
-                                LedEventType::Switch(false),
-                            );
-                            let parameter_on_event =
-                                LedEvent::new(e.btn, LedEventType::Switch(true));
+                            let parameter_off_event = ControlButtonLedEvent {
+                                btn: ControlButton::Parameter(encoder_parameter_type),
+                                on: false,
+                            };
+                            let parameter_on_event = ControlButtonLedEvent {
+                                btn: ControlButton::Parameter(param),
+                                on: true,
+                            };
 
                             cx.shared.encoder_parameter_type.lock(|ept| {
                                 *ept = param;
                             });
 
                             cx.shared.leds.lock(|l| {
-                                let mut banks = l.get_state();
-                                banks = parameter_off_event.apply_to_leds_state(banks);
-                                banks = parameter_on_event.apply_to_leds_state(banks);
-                                l.set_state(banks);
+                                l.apply_control_button_event(parameter_off_event);
+                                l.apply_control_button_event(parameter_on_event);
                             });
                         }
                     }
-                    ButtonType::Arrow(dir) => {
+                    Button::Control(ControlButton::Arrow(dir)) => {
                         let midi = match on {
                             true => NoteOn::new(8, dir as u8, 127).unwrap().to_bytes(),
                             false => NoteOff::new(8, dir as u8).unwrap().to_bytes(),
@@ -341,7 +335,7 @@ mod app {
                         cx.shared.midi.lock(|m| m.enqueue(midi).unwrap());
                         usb_poll_task::spawn().ok();
                     }
-                    ButtonType::Mode(mode) => {
+                    Button::Control(ControlButton::Mode(mode)) => {
                         let midi = match on {
                             true => NoteOn::new(9, mode as u8, 127).unwrap().to_bytes(),
                             false => NoteOff::new(9, mode as u8).unwrap().to_bytes(),
@@ -371,8 +365,6 @@ mod app {
                             let x = note_on.note % 8;
                             let y = note_on.note / 8;
 
-                            let btn = ButtonType::Pad { x, y };
-
                             let rgb = match note_on.velocity {
                                 127 => {
                                     // show preset color depending on y, for Ardour compatibility
@@ -391,26 +383,24 @@ mod app {
                             };
 
                             if x < 8 && y < 8 {
-                                led_event =
-                                    Some(LedEvent::new(btn, LedEventType::SwitchColor(rgb)));
+                                led_event = Some(LedEvent::Pad(PadLedEvent {
+                                    pad: Pad { x, y },
+                                    color: rgb,
+                                }));
                                 channel = note_on.channel + 1;
                             }
                         }
                         8 if note_on.note < 4 => {
-                            let btn = ButtonType::Arrow(DIRECTION_TYPES[note_on.note as usize]);
-
-                            led_event = Some(LedEvent::new(
-                                btn,
-                                LedEventType::Switch(note_on.velocity != 0),
-                            ))
+                            led_event = Some(LedEvent::ControlButton(ControlButtonLedEvent {
+                                btn: ControlButton::Arrow(DIRECTION_TYPES[note_on.note as usize]),
+                                on: note_on.velocity != 0,
+                            }));
                         }
                         9 if note_on.note < 4 => {
-                            let btn = ButtonType::Mode(MODE_TYPES[note_on.note as usize]);
-
-                            led_event = Some(LedEvent::new(
-                                btn,
-                                LedEventType::Switch(note_on.velocity != 0),
-                            ));
+                            led_event = Some(LedEvent::ControlButton(ControlButtonLedEvent {
+                                btn: ControlButton::Mode(MODE_TYPES[note_on.note as usize]),
+                                on: note_on.velocity != 0,
+                            }));
                         }
                         _ => (), // ignore message
                     }
@@ -421,25 +411,25 @@ mod app {
                             let x = note_off.note % 8;
                             let y = note_off.note / 8;
 
-                            let btn = ButtonType::Pad { x, y };
-
                             if x < 8 && y < 8 {
-                                led_event = Some(LedEvent::new(
-                                    btn,
-                                    LedEventType::SwitchColor(COLOR_BLACK),
-                                ));
+                                led_event = Some(LedEvent::Pad(PadLedEvent {
+                                    pad: Pad { x, y },
+                                    color: COLOR_BLACK,
+                                }));
                                 channel = note_off.channel + 1;
                             }
                         }
                         8 => {
-                            let btn = ButtonType::Arrow(DIRECTION_TYPES[note_off.note as usize]);
-
-                            led_event = Some(LedEvent::new(btn, LedEventType::Switch(false)))
+                            led_event = Some(LedEvent::ControlButton(ControlButtonLedEvent {
+                                btn: ControlButton::Arrow(DIRECTION_TYPES[note_off.note as usize]),
+                                on: false,
+                            }));
                         }
                         9 => {
-                            let btn = ButtonType::Mode(MODE_TYPES[note_off.note as usize]);
-
-                            led_event = Some(LedEvent::new(btn, LedEventType::Switch(false)));
+                            led_event = Some(LedEvent::ControlButton(ControlButtonLedEvent {
+                                btn: ControlButton::Mode(MODE_TYPES[note_off.note as usize]),
+                                on: false,
+                            }));
                         }
                         _ => (), // ignore message
                     }
@@ -453,9 +443,9 @@ mod app {
                     } else if cc.controller == 110 && cc.value < 8 {
                         cx.shared.button_event_p.lock(|bep| {
                             bep.enqueue(ButtonEvent {
-                                btn: ButtonType::Parameter(
-                                    ParameterType::try_from(cc.value).unwrap(),
-                                ),
+                                btn: Button::Control(ControlButton::Parameter(
+                                    Parameter::try_from(cc.value).unwrap(),
+                                )),
                                 event: ButtonEventEdge::PosEdge,
                             })
                             .unwrap()
@@ -463,7 +453,7 @@ mod app {
                     } else if cc.controller == 111 && cc.value < 8 {
                         cx.shared.button_event_p.lock(|bep| {
                             bep.enqueue(ButtonEvent {
-                                btn: ButtonType::Master(cc.value + 1),
+                                btn: Button::Control(ControlButton::Master(cc.value + 1)),
                                 event: ButtonEventEdge::PosEdge,
                             })
                             .unwrap()
@@ -498,9 +488,16 @@ mod app {
 
                 if let Some(le) = led_event {
                     defmt::info!("Handle {}", le);
-                    cx.shared
-                        .leds
-                        .lock(|leds| pad_handler.apply_led_event(le, channel, leds));
+                    cx.shared.leds.lock(|leds| {
+                        if let LedEvent::Pad(_) = le
+                            && channel == pad_handler.get_current_channel()
+                        {
+                            leds.apply_event(le);
+                        }
+                        if let LedEvent::Pad(pad_event) = le {
+                            pad_handler.apply_led_event(pad_event, channel);
+                        }
+                    });
                 }
             }
         }

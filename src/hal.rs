@@ -1,4 +1,5 @@
 use cortex_m::asm::delay;
+use embedded_graphics::pixelcolor::PixelColor;
 use num_enum::TryFromPrimitive;
 
 #[derive(Clone, Copy, Debug, defmt::Format)]
@@ -138,11 +139,15 @@ pub const COLOR_RED: PadColor = PadColor { r: 3, g: 0, b: 0 };
 /// should be turned on.
 ///
 /// Time slots have different lengths to implement some kind of gamma correction.
-#[derive(Clone, Copy, Debug, defmt::Format)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, defmt::Format)]
 pub struct PadColor {
     pub r: u8,
     pub g: u8,
     pub b: u8,
+}
+
+impl PixelColor for PadColor {
+    type Raw = ();
 }
 
 /// Binary RGB value.

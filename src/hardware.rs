@@ -1,5 +1,10 @@
-use crate::hal::{ControlButton, ControlButtonLedEvent, LedEvent, PadLedEvent, Rgb, delay_us};
+use core::convert::Infallible;
+
+use crate::hal::{
+    ControlButton, ControlButtonLedEvent, LedEvent, Pad, PadColor, PadLedEvent, Rgb, delay_us,
+};
 use cortex_m::asm::delay;
+use embedded_graphics::prelude::*;
 use stm32f1xx_hal::gpio::gpioa::{PA0, PA1, PA2, PA3, PA4, PA5};
 use stm32f1xx_hal::gpio::gpiob::{
     PB0, PB1, PB2, PB3, PB4, PB5, PB6, PB7, PB8, PB9, PB10, PB12, PB13, PB14, PB15,
@@ -343,6 +348,37 @@ impl PadLedsState {
                 new_bank[bank_b] &= !(1 << bit);
             }
         }
+    }
+}
+
+impl DrawTarget for PadLedsState {
+    type Color = PadColor;
+
+    type Error = Infallible;
+
+    fn draw_iter<I>(&mut self, pixels: I) -> Result<(), Self::Error>
+    where
+        I: IntoIterator<Item = Pixel<Self::Color>>,
+    {
+        for Pixel(point, color) in pixels.into_iter() {
+            if point.x >= 0 && point.x < 8 && point.y >= 0 && point.y < 8 {
+                let event = PadLedEvent {
+                    pad: Pad {
+                        x: point.x as u8,
+                        y: point.y as u8,
+                    },
+                    color,
+                };
+                self.apply_event(event);
+            }
+        }
+        Ok(())
+    }
+}
+
+impl OriginDimensions for PadLedsState {
+    fn size(&self) -> Size {
+        Size::new(8, 8)
     }
 }
 

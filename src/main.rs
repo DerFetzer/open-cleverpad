@@ -25,7 +25,9 @@ mod app {
         DIRECTION_TYPES, LedEvent, MODE_TYPES, Pad, PadColor, PadLedEvent, Parameter,
     };
     use crate::handler::PadLedHandler;
-    use crate::hardware::{ButtonMatrix, ButtonMatrixPins, EncoderPins, Encoders, LedPins, Leds};
+    use crate::hardware::{
+        ButtonMatrix, ButtonMatrixPins, EncoderPins, Encoders, LedPins, Leds, NUM_TIME_SLOTS,
+    };
     use crate::midi::{
         ControlChange, EncoderMode, EncoderParameters, MidiMessage, NoteOff, NoteOn,
     };
@@ -34,8 +36,9 @@ mod app {
     use cortex_m::peripheral::NVIC;
     use heapless::spsc::{Consumer, Producer, Queue};
     use rtic_monotonics::stm32::prelude::*;
-    use stm32f1xx_hal::pac::{Peripherals, TIM3};
+    use stm32f1xx_hal::pac::{Peripherals, TIM1, TIM3};
     use stm32f1xx_hal::rcc::{self, RccBus};
+    use stm32f1xx_hal::timer::{CounterUs, Event};
     use stm32f1xx_hal::{
         // gpio::gpioa::*,
         gpio::*,
@@ -47,8 +50,13 @@ mod app {
     use usb_device::prelude::*;
     use usbd_serial::SerialPort;
 
-    // Periods should not be multiple of each other. Otherwise there can be flicker.
-    const LED_BANK_PERIOD: u64 = 1_101;
+    const LED_BANK_PERIOD: u32 = 1_101;
+    const LED_BANK_DIVIDER: u32 = 15;
+
+    // Gamma correction (~2.8)
+    // See gamma.py
+    const GAMMA_FACTORS: [u32; NUM_TIME_SLOTS] = [1, 4, 10];
+
     const ENC_CAPTURE_PERIOD: u64 = 223; // ~5kHz
     const ENC_EVAL_PERIOD: u64 = 21_005; // ~50Hz
     const BUTTON_COL_PERIOD: u64 = 11_507; // ~.1kHz
@@ -76,12 +84,15 @@ mod app {
         prev_encoder_positions: [i32; 8],
         prev_button_state: [u8; 11],
         button_event_c: Consumer<'static, ButtonEvent>,
+        led_timer_handle: CounterUs<TIM1>,
         // debug_pin_pa9: PA9<Output<PushPull>>,
         // debug_pin_pa10: PA10<Output<PushPull>>,
     }
 
     #[init(local = [BUTTON_QUEUE: Queue<ButtonEvent, 64> = Queue::new(), USB_BUS: Option<usb_device::bus::UsbBusAllocator<UsbBusType>> = None])]
     fn init(cx: init::Context) -> (Shared, Local) {
+        assert_eq!(GAMMA_FACTORS.into_iter().sum::<u32>(), LED_BANK_DIVIDER);
+
         let dp: Peripherals = cx.device;
 
         // Take ownership over the raw flash and rcc devices and convert them into the corresponding
@@ -236,7 +247,13 @@ mod app {
             .unwrap()
             .build();
 
-        led_bank::spawn().unwrap();
+        // Use timer for LEDs to reduce jitter/flicker
+        let mut led_timer_handle = dp.TIM1.counter_us(&mut rcc);
+        led_timer_handle
+            .start(LED_BANK_PERIOD.micros() / LED_BANK_DIVIDER)
+            .unwrap();
+        led_timer_handle.listen(Event::Update);
+
         enc::spawn().unwrap();
         enc_eval::spawn().unwrap();
         button::spawn().unwrap();
@@ -262,6 +279,7 @@ mod app {
                 prev_encoder_positions: [0; 8],
                 prev_button_state: [0; 11],
                 button_event_c,
+                led_timer_handle,
                 // debug_pin_pa9: debug_pa9,
                 // debug_pin_pa10: debug_pa10,
             },
@@ -293,7 +311,7 @@ mod app {
                     // send midi
                     Button::Pad(Pad { x, y }) => {
                         let midi = pad_handler.handle_pad_button_event(x, y, on);
-                        cx.shared.midi.lock(|m| m.enqueue(midi).unwrap());
+                        cx.shared.midi.lock(|m| m.enqueue(midi).ok());
                         usb_poll_task::spawn().ok();
                     }
                     Button::Control(ControlButton::Master(new_channel)) => {
@@ -334,7 +352,7 @@ mod app {
                             false => NoteOff::new(8, dir as u8).unwrap().to_bytes(),
                         };
 
-                        cx.shared.midi.lock(|m| m.enqueue(midi).unwrap());
+                        cx.shared.midi.lock(|m| m.enqueue(midi).ok());
                         usb_poll_task::spawn().ok();
                     }
                     Button::Control(ControlButton::Mode(mode)) => {
@@ -343,7 +361,7 @@ mod app {
                             false => NoteOff::new(9, mode as u8).unwrap().to_bytes(),
                         };
 
-                        cx.shared.midi.lock(|m| m.enqueue(midi).unwrap());
+                        cx.shared.midi.lock(|m| m.enqueue(midi).ok());
                         usb_poll_task::spawn().ok();
                     }
                 };
@@ -450,7 +468,7 @@ mod app {
                                 )),
                                 event: ButtonEventEdge::PosEdge,
                             })
-                            .unwrap()
+                            .ok();
                         })
                     } else if cc.controller == 111 && cc.value < 8 {
                         cx.shared.button_event_p.lock(|bep| {
@@ -458,7 +476,7 @@ mod app {
                                 btn: Button::Control(ControlButton::Master(cc.value + 1)),
                                 event: ButtonEventEdge::PosEdge,
                             })
-                            .unwrap()
+                            .ok();
                         })
                     } else if cc.controller == 112 {
                         if let Ok(mode) = EncoderMode::try_from(cc.value & 0b111) {
@@ -505,29 +523,28 @@ mod app {
         }
     }
 
-    #[task(priority = 3, shared = [leds])]
-    async fn led_bank(mut cx: led_bank::Context) {
-        loop {
-            let baseline = Mono::now();
+    #[task(binds = TIM1_UP, priority = 3, shared = [leds], local = [led_timer_handle, count: u32 = 0, current_mod: u32 = 1, last_time_slot: usize = 0])]
+    fn led_bank(mut cx: led_bank::Context) {
+        if (*cx.local.count).is_multiple_of(*cx.local.current_mod) {
             let current_time_slot: usize = cx.shared.leds.lock(|leds| leds.write_next_bank());
 
-            // Gamma correction (~2.8)
-            let delay = match current_time_slot {
-                0 => LED_BANK_PERIOD.micros() / 15,
-                1 => LED_BANK_PERIOD.micros() / 15 * 4,
-                2 => LED_BANK_PERIOD.micros() / 15 * 10,
-                _ => unreachable!(),
-            };
+            if current_time_slot != *cx.local.last_time_slot {
+                *cx.local.count = 0;
+                *cx.local.current_mod = GAMMA_FACTORS[current_time_slot];
+            }
 
-            Mono::delay_until(baseline + delay).await;
+            *cx.local.last_time_slot = current_time_slot;
         }
+
+        *cx.local.count += 1;
+        cx.local.led_timer_handle.clear_interrupt(Event::Update);
     }
 
     #[task(priority = 2, local = [encoders], shared = [encoder_positions])]
-    async fn enc(mut cx: enc::Context) {
+    async fn enc(mut cx: enc::Context) -> ! {
         loop {
             let baseline = Mono::now();
-            let change: bool = cx.local.encoders.read();
+            let change: bool = cx.local.encoders.read().await;
 
             if change {
                 cx.shared
@@ -540,7 +557,7 @@ mod app {
     }
 
     #[task(priority = 1, local = [prev_encoder_positions], shared = [encoder_positions, abs_encoder_positions, encoder_parameter_type, encoder_parameters, midi])]
-    async fn enc_eval(mut cx: enc_eval::Context) {
+    async fn enc_eval(mut cx: enc_eval::Context) -> ! {
         loop {
             let baseline = Mono::now();
             let new_encoder_positions = cx.shared.encoder_positions.lock(|&mut p| p);
@@ -570,7 +587,7 @@ mod app {
                         let midi = ControlChange::new(parameter_type, i as u8 + 1, value).unwrap();
                         let midi_bytes = midi.to_bytes();
                         defmt::info!("Create {} from encoders", midi);
-                        cx.shared.midi.lock(|m| m.enqueue(midi_bytes).unwrap());
+                        cx.shared.midi.lock(|m| m.enqueue(midi_bytes).ok());
                         usb_poll_task::spawn().ok();
                     }
                 }
@@ -582,9 +599,9 @@ mod app {
     }
 
     #[task(priority = 2, local = [button_matrix, prev_button_state], shared = [button_event_p])]
-    async fn button(mut cx: button::Context) {
+    async fn button(mut cx: button::Context) -> ! {
         loop {
-            cx.local.button_matrix.read();
+            cx.local.button_matrix.read().await;
 
             let deb_rows: [u8; 11] = cx.local.button_matrix.get_debounced_rows();
 
@@ -602,7 +619,7 @@ mod app {
 
                         if let Some(e) = edge {
                             cx.shared.button_event_p.lock(|bep| {
-                                bep.enqueue(ButtonEvent::new(row, col as u8, e)).unwrap()
+                                bep.enqueue(ButtonEvent::new(row, col as u8, e)).ok();
                             })
                         }
                     }
@@ -656,7 +673,9 @@ mod app {
         if !midi.write_queue_is_empty() {
             match midi.write_queue_to_host() {
                 Ok(_) => {}
-                Err(UsbError::WouldBlock) => {} // If nothing is connected
+                Err(UsbError::WouldBlock) => {
+                    defmt::debug!("Retry counter max reached");
+                } // If nothing is connected
                 Err(_) => panic!(),
             }
         }

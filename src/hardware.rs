@@ -593,7 +593,7 @@ impl Leds {
             self.pins.hs_a2.set_high();
         }
 
-        // Wait for LEDs in last bank to go out
+        // Wait for LEDs in previous bank to go out
         delay(4);
 
         self.pins.ls_en_l.set_low();

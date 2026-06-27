@@ -23,7 +23,7 @@ test = false
 bench = false
 
 [profile.release]
-lto = true
+lto = "fat"
 codegen-units = 1
 debug = true
 
@@ -37,6 +37,7 @@ features = ["stm32f103", "medium", "stm32-usbd"]
 
 [dependencies.cortex-m]
 version = "0.7.7"
+features = ["inline-asm"]
 
 [dependencies.rtic]
 version = "2.2.0"

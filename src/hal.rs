@@ -1,6 +1,7 @@
-use cortex_m::asm::delay;
 use embedded_graphics::pixelcolor::PixelColor;
 use num_enum::TryFromPrimitive;
+
+use crate::hardware::NUM_TIME_SLOTS;
 
 #[derive(Clone, Copy, Debug, defmt::Format)]
 pub enum Button {
@@ -175,12 +176,12 @@ impl PadColor {
     }
 
     /// Calculates which LEDs should be on in each of the 4 cycles.
-    pub fn as_rgb(&self) -> [Rgb; 4] {
+    pub fn as_rgb(&self) -> [Rgb; NUM_TIME_SLOTS] {
         let mut rgb = [Rgb {
             r: false,
             g: false,
             b: false,
-        }; 4];
+        }; NUM_TIME_SLOTS];
 
         if self.r >= 1 {
             rgb[0].r = true;
@@ -214,10 +215,4 @@ impl PadColor {
 
         rgb
     }
-}
-
-pub fn delay_us(us: u32) {
-    const SYSCLK_MHZ: u32 = 72;
-
-    delay(SYSCLK_MHZ * us);
 }

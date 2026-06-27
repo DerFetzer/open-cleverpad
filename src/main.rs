@@ -12,6 +12,10 @@ mod log;
 mod midi;
 mod usb_midi;
 
+use rtic_monotonics::stm32::prelude::*;
+
+stm32_tim3_monotonic!(Mono, 1_000_000);
+
 #[rtic::app(device = stm32f1xx_hal::pac, peripherals = true, dispatchers = [EXTI1, EXTI2, EXTI3])]
 mod app {
     use crate::hal::ButtonEventEdge::{NegEdge, PosEdge};
@@ -26,7 +30,7 @@ mod app {
         ControlChange, EncoderMode, EncoderParameters, MidiMessage, NoteOff, NoteOn,
     };
     use crate::usb_midi::MidiClass;
-    use crate::{log, usb_midi};
+    use crate::{Mono, log, usb_midi};
     use cortex_m::peripheral::NVIC;
     use heapless::spsc::{Consumer, Producer, Queue};
     use rtic_monotonics::stm32::prelude::*;
@@ -42,8 +46,6 @@ mod app {
     use usb_device::bus;
     use usb_device::prelude::*;
     use usbd_serial::SerialPort;
-
-    stm32_tim3_monotonic!(Mono, 1_000_000);
 
     // Periods should not be multiple of each other. Otherwise there can be flicker.
     const LED_BANK_PERIOD: u64 = 1_101;
@@ -511,10 +513,9 @@ mod app {
 
             // Gamma correction (~2.8)
             let delay = match current_time_slot {
-                0 => LED_BANK_PERIOD.micros() / 50,
-                1 => LED_BANK_PERIOD.micros() / 50 * 6,
-                2 => LED_BANK_PERIOD.micros() / 50 * 15,
-                3 => LED_BANK_PERIOD.micros() / 50 * 28,
+                0 => LED_BANK_PERIOD.micros() / 15,
+                1 => LED_BANK_PERIOD.micros() / 15 * 4,
+                2 => LED_BANK_PERIOD.micros() / 15 * 10,
                 _ => unreachable!(),
             };
 

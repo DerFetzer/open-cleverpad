@@ -82,7 +82,8 @@ impl<B: UsbBus> MidiClass<'_, B> {
         loop {
             match self.write(&data[..4 * i]) {
                 Ok(size) => return Ok(size),
-                Err(UsbError::WouldBlock) if retry_counter < 100 => retry_counter += 1,
+                Err(UsbError::WouldBlock) if retry_counter < 10 => retry_counter += 1,
+                Err(UsbError::WouldBlock) => return Err(UsbError::WouldBlock),
                 Err(e) => return Err(e),
             }
         }

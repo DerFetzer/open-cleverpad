@@ -1,10 +1,10 @@
 use core::convert::Infallible;
 
-use crate::hal::{
-    ControlButton, ControlButtonLedEvent, LedEvent, Pad, PadColor, PadLedEvent, Rgb, delay_us,
-};
+use crate::Mono;
+use crate::hal::{ControlButton, ControlButtonLedEvent, LedEvent, Pad, PadColor, PadLedEvent, Rgb};
 use cortex_m::asm::delay;
 use embedded_graphics::prelude::*;
+use rtic_monotonics::rtic_time::embedded_hal_async::delay::DelayNs;
 use stm32f1xx_hal::gpio::gpioa::{PA0, PA1, PA2, PA3, PA4, PA5};
 use stm32f1xx_hal::gpio::gpiob::{
     PB0, PB1, PB2, PB3, PB4, PB5, PB6, PB7, PB8, PB9, PB10, PB12, PB13, PB14, PB15,
@@ -47,7 +47,7 @@ impl ButtonMatrix {
         self.debounced_rows
     }
 
-    pub fn read(&mut self) {
+    pub async fn read(&mut self) {
         self.rows_neg2.copy_from_slice(&self.rows_neg1);
         self.rows_neg1.copy_from_slice(&self.rows);
 
@@ -66,7 +66,7 @@ impl ButtonMatrix {
                 10 => self.pins.col11.set_low(),
                 _ => unreachable!(),
             };
-            delay_us(10);
+            Mono.delay_us(2).await;
 
             let mut row: u8 = 0;
             row |= self.pins.row1.is_low() as u8;
@@ -160,7 +160,7 @@ impl Encoders {
         self.positions
     }
 
-    pub fn read(&mut self) -> bool {
+    pub async fn read(&mut self) -> bool {
         let mut change = false;
 
         self.a_neg2 = self.a_neg1;
@@ -186,7 +186,7 @@ impl Encoders {
                 self.pins.a2.set_high();
             }
 
-            delay_us(5);
+            Mono.delay_us(2).await;
 
             if self.pins.a.is_low() {
                 self.a |= 1_u8 << i;
@@ -262,7 +262,7 @@ pub struct EncoderPins {
     pub b: PA0<Input<Floating>>,
 }
 
-pub const NUM_TIME_SLOTS: usize = 4;
+pub const NUM_TIME_SLOTS: usize = 3;
 
 pub const NUM_PAD_BANKS: usize = 6;
 pub const NUM_BUTTON_BANKS: usize = 2;
@@ -451,7 +451,9 @@ pub struct Leds {
 }
 
 impl Leds {
-    pub fn new(pins: LedPins) -> Self {
+    pub fn new(mut pins: LedPins) -> Self {
+        pins.hs_en_l.set_low();
+        pins.ls_en_l.set_low();
         Leds {
             pins,
             pad_state: Default::default(),
@@ -493,13 +495,11 @@ impl Leds {
                 self.pad_state.0[0][bank as usize],
                 self.pad_state.0[1][bank as usize],
                 self.pad_state.0[2][bank as usize],
-                self.pad_state.0[3][bank as usize],
             ],
             Bank::Control(bank) => [
                 self.control_button_state.0[0][bank as usize],
                 self.control_button_state.0[1][bank as usize],
                 self.control_button_state.0[2][bank as usize],
-                self.control_button_state.0[3][bank as usize],
             ],
         }
     }
@@ -527,7 +527,14 @@ impl Leds {
     }
 
     /// Returns the number of the current time slot.
+    // #[inline(never)]
     pub fn write_next_bank(&mut self) -> usize {
+        // VDD is around 4.2V since the USB voltage has polaity protection via a normal diode.
+        // Switching characteristics are only given for 3.3V and 5V so all calculations use an
+        // estimate middle value.
+        //
+        // 72MHz clock speed has a cycle time of around 13ns
+
         self.current_bank += 1;
         if self.current_bank == NUM_BANKS {
             self.current_bank = 0;
@@ -537,9 +544,37 @@ impl Leds {
                 self.current_time_slot = 0;
             }
         }
+        let mut bank_value = if self.current_bank < NUM_PAD_BANKS {
+            self.pad_state.0[self.current_time_slot][self.current_bank]
+        } else {
+            self.control_button_state.0[self.current_time_slot][self.current_bank - NUM_PAD_BANKS]
+        };
 
+        // Shift values into LED drivers
+        for _ in 0..32 {
+            if bank_value & 1 == 0 {
+                self.pins.ls_dai.set_low();
+            } else {
+                self.pins.ls_dai.set_high();
+            }
+            bank_value >>= 1;
+            self.pins.ls_dck.set_high();
+            // Pulse width for DCK should be higher than 15ns
+            delay(2);
+            self.pins.ls_dck.set_low();
+        }
+
+        // Disable output before switching common anodes
         self.pins.hs_en_l.set_high();
         self.pins.ls_en_l.set_high();
+
+        // Wait for propagation delay and current fall time: 18ns + 15ns = 33ns
+        delay(3);
+
+        self.pins.ls_lat.set_high();
+        // Pulse width for LAT should be higher than 15ns
+        delay(2);
+        self.pins.ls_lat.set_low();
 
         // Set mux address -> enable common anode
         if self.current_bank & (1 << 0) == 0 {
@@ -558,29 +593,7 @@ impl Leds {
             self.pins.hs_a2.set_high();
         }
 
-        // Shift values into LED drivers
-        for i in 0..32 {
-            let bank_value = if self.current_bank < NUM_PAD_BANKS {
-                self.pad_state.0[self.current_time_slot][self.current_bank]
-            } else {
-                self.control_button_state.0[self.current_time_slot]
-                    [self.current_bank - NUM_PAD_BANKS]
-            };
-
-            if bank_value & (1 << i) == 0 {
-                self.pins.ls_dai.set_low();
-            } else {
-                self.pins.ls_dai.set_high();
-            }
-            delay(4);
-            self.pins.ls_dck.set_high();
-            delay(4);
-            self.pins.ls_dck.set_low();
-        }
-        delay(4);
-        self.pins.ls_lat.set_high();
-        delay(4);
-        self.pins.ls_lat.set_low();
+        // Wait for LEDs in last bank to go out
         delay(4);
 
         self.pins.ls_en_l.set_low();

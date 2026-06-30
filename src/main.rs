@@ -339,14 +339,12 @@ mod app {
                                             midi.enqueue(message).unwrap();
                                         },
                                     );
-                                    usb_poll_task::spawn().ok();
                                     sequencer.draw(leds.get_pad_state_mut());
                                 });
                             }
                         } else {
                             let midi = pad_handler.handle_pad_button_event(x, y, on);
                             cx.shared.midi.lock(|m| m.enqueue(midi).ok());
-                            usb_poll_task::spawn().ok();
                         }
                     }
                     Button::Control(ControlButton::Master(new_channel)) => {
@@ -388,7 +386,6 @@ mod app {
                         };
 
                         cx.shared.midi.lock(|m| m.enqueue(midi).ok());
-                        usb_poll_task::spawn().ok();
                     }
                     Button::Control(ControlButton::Mode(mode)) => {
                         let midi = match on {
@@ -397,7 +394,6 @@ mod app {
                         };
 
                         cx.shared.midi.lock(|m| m.enqueue(midi).ok());
-                        usb_poll_task::spawn().ok();
                     }
                 };
             }
@@ -581,7 +577,6 @@ mod app {
             sequencer.step(|message| {
                 midi.enqueue(message).unwrap();
             });
-            usb_poll_task::spawn().ok();
             sequencer.draw(leds.get_pad_state_mut());
         });
         cx.local
@@ -670,7 +665,6 @@ mod app {
                         let midi_bytes = midi.to_bytes();
                         defmt::info!("Create {} from encoders", midi);
                         cx.shared.midi.lock(|m| m.enqueue(midi_bytes).ok());
-                        usb_poll_task::spawn().ok();
                     }
                 }
                 *cx.local.prev_encoder_positions = new_encoder_positions;

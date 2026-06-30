@@ -4,12 +4,13 @@ use critical_section::RestoreState;
 use defmt::{Encoder, Logger, global_logger};
 use heapless::{Vec, mpmc::Queue};
 
-const MAX_BYTES: usize = 64;
+const MAX_BYTES: usize = 16;
+const BUF_LEN: usize = 64;
 
 static TAKEN: AtomicBool = AtomicBool::new(false);
 static OVERFLOW: AtomicBool = AtomicBool::new(false);
 #[expect(deprecated)]
-static BUF: Queue<Vec<u8, MAX_BYTES>, 8> = Queue::new();
+static BUF: Queue<Vec<u8, MAX_BYTES>, BUF_LEN> = Queue::new();
 static mut ENCODER: Encoder = Encoder::new();
 static mut CS_RESTORE: RestoreState = RestoreState::invalid();
 
@@ -48,7 +49,6 @@ unsafe impl Logger for BufferLogger {
             let restore = CS_RESTORE;
             critical_section::release(restore)
         };
-        usb_poll_task::spawn().ok();
     }
 
     unsafe fn write(bytes: &[u8]) {
@@ -65,13 +65,16 @@ fn write_to_queue(bytes: &[u8]) {
         return;
     }
 
-    let res = Vec::from_slice(bytes).map(|v| BUF.enqueue(v));
-
-    if !matches!(res, Ok(Ok(_))) {
-        OVERFLOW.store(true, Ordering::Relaxed);
+    for chunk in bytes.chunks(MAX_BYTES) {
+        let res = Vec::from_slice(chunk).map(|v| BUF.enqueue(v));
+        if !matches!(res, Ok(Ok(_))) {
+            OVERFLOW.store(true, Ordering::Relaxed);
+            break;
+        }
     }
+    usb_poll_task::spawn().ok();
 }
 
-pub fn get_queue() -> &'static Queue<Vec<u8, MAX_BYTES>, 8> {
+pub fn get_queue() -> &'static Queue<Vec<u8, MAX_BYTES>, BUF_LEN> {
     &BUF
 }

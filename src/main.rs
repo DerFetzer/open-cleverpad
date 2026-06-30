@@ -757,8 +757,24 @@ mod app {
         }
 
         while let Some(buf) = log::get_queue().dequeue() {
-            if serial.write(buf.as_slice()) != Ok(buf.len()) {
-                break;
+            let mut retry_counter = 0;
+            let mut start = 0;
+            loop {
+                match serial.write(&buf[start..]) {
+                    Ok(bytes_written) if buf[start..].len() == bytes_written => break,
+                    Ok(bytes_written) => {
+                        start += bytes_written;
+                        retry_counter = 0;
+                    }
+                    Err(UsbError::WouldBlock) => {
+                        if retry_counter >= 10 {
+                            break;
+                        } else {
+                            retry_counter += 1;
+                        }
+                    }
+                    Err(_) => break,
+                }
             }
         }
 

@@ -1,9 +1,11 @@
 use core::cmp::min;
 use num_enum::TryFromPrimitive;
 
+pub type MidiEventPacket = [u8; 4];
+
 pub trait MidiMessage {
-    fn to_bytes(&self) -> [u8; 4];
-    fn from_bytes(bytes: [u8; 4]) -> Option<Self>
+    fn to_bytes(&self) -> MidiEventPacket;
+    fn from_bytes(bytes: MidiEventPacket) -> Option<Self>
     where
         Self: Sized;
 }
@@ -30,11 +32,11 @@ impl NoteOn {
 }
 
 impl MidiMessage for NoteOn {
-    fn to_bytes(&self) -> [u8; 4] {
+    fn to_bytes(&self) -> MidiEventPacket {
         [0x09, 0x90 | (self.channel & 0x0F), self.note, self.velocity]
     }
 
-    fn from_bytes(bytes: [u8; 4]) -> Option<Self> {
+    fn from_bytes(bytes: MidiEventPacket) -> Option<Self> {
         match bytes {
             [0x09, status, note, velocity] if status & 0xF0 == 0x90 => {
                 NoteOn::new(status & 0x0F, note, velocity)
@@ -61,11 +63,11 @@ impl NoteOff {
 }
 
 impl MidiMessage for NoteOff {
-    fn to_bytes(&self) -> [u8; 4] {
+    fn to_bytes(&self) -> MidiEventPacket {
         [0x08, 0x80 | (self.channel & 0x0F), self.note, 0x00]
     }
 
-    fn from_bytes(bytes: [u8; 4]) -> Option<Self> {
+    fn from_bytes(bytes: MidiEventPacket) -> Option<Self> {
         match bytes {
             [0x08, status, note, _] if status & 0xF0 == 0x80 => NoteOff::new(status & 0x0F, note),
             _ => None,
@@ -95,7 +97,7 @@ impl ControlChange {
 }
 
 impl MidiMessage for ControlChange {
-    fn to_bytes(&self) -> [u8; 4] {
+    fn to_bytes(&self) -> MidiEventPacket {
         [
             0x0B,
             0xB0 | (self.channel & 0x0F),
@@ -104,7 +106,7 @@ impl MidiMessage for ControlChange {
         ]
     }
 
-    fn from_bytes(bytes: [u8; 4]) -> Option<Self> {
+    fn from_bytes(bytes: MidiEventPacket) -> Option<Self> {
         match bytes {
             [0x0B, status, controller, value] if status & 0xF0 == 0xB0 => {
                 ControlChange::new(status & 0x0F, controller, value)

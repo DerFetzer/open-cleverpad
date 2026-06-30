@@ -1,7 +1,7 @@
 use heapless::spsc::Queue;
 use usb_device::class_prelude::*;
 
-use crate::app::usb_poll_task;
+use crate::{app::usb_poll_task, midi::MidiEventPacket};
 
 const USB_CLASS_AUDIO: u8 = 0x01;
 const AUDIO_SUBCLASS_CONTROL: u8 = 0x01;
@@ -22,8 +22,8 @@ pub struct MidiClass<'a, B: UsbBus> {
     ms_if: InterfaceNumber,
     read_ep: EndpointOut<'a, B>,
     write_ep: EndpointIn<'a, B>,
-    read_queue: Queue<[u8; 4], 256>,
-    write_queue: Queue<[u8; 4], 32>,
+    read_queue: Queue<MidiEventPacket, 256>,
+    write_queue: Queue<MidiEventPacket, 32>,
     need_zlp: bool,
 }
 
@@ -91,15 +91,15 @@ impl<B: UsbBus> MidiClass<'_, B> {
         }
     }
 
-    pub fn enqueue(&mut self, data: [u8; 4]) -> Result<(), [u8; 4]> {
+    pub fn enqueue(&mut self, data: MidiEventPacket) -> Result<(), MidiEventPacket> {
         let res = self.write_queue.enqueue(data);
-        if let Ok(_) = &res {
+        if res.is_ok() {
             usb_poll_task::spawn().ok();
         }
         res
     }
 
-    pub fn dequeue(&mut self) -> Option<[u8; 4]> {
+    pub fn dequeue(&mut self) -> Option<MidiEventPacket> {
         self.read_queue.dequeue()
     }
 

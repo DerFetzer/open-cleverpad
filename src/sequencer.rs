@@ -10,7 +10,7 @@ use heapless::{Vec, index_set::FnvIndexSet};
 use crate::{
     hal::{Button, COLOR_BLACK, COLOR_WHITE, PadColor},
     hardware::PadLedsState,
-    midi::{MidiMessage, NoteOff, NoteOn},
+    midi::{MidiEventPacket, MidiMessage, NoteOff, NoteOn},
 };
 
 #[derive(defmt::Format, Clone, Copy, Default)]
@@ -114,7 +114,7 @@ impl SequencerChannel {
 
     pub fn step<F>(&mut self, mut midi_callback: F)
     where
-        F: FnMut([u8; 4]),
+        F: FnMut(MidiEventPacket),
     {
         if self.position == 0 {
             // Stop all notes that are not already stopped from the last iteration
@@ -174,7 +174,7 @@ impl SequencerChannel {
 
     pub fn change_step<F>(&mut self, step: u8, index: u8, octave: u8, mut midi_callback: F)
     where
-        F: FnMut([u8; 4]),
+        F: FnMut(MidiEventPacket),
     {
         defmt::info!("change_step: {}, {}, {}", step, index, octave);
         let step = &mut self.steps[step as usize];
@@ -271,7 +271,7 @@ impl Sequencer {
 
     pub fn step<F>(&mut self, mut midi_callback: F)
     where
-        F: FnMut([u8; 4]),
+        F: FnMut(MidiEventPacket),
     {
         self.step_counter = self.step_counter.wrapping_add(1);
         if self.step_counter.is_multiple_of(self.step_divider) {
@@ -291,7 +291,7 @@ impl Sequencer {
 
     pub fn handle_button_press<F>(&mut self, button: Button, mut midi_callback: F)
     where
-        F: FnMut([u8; 4]),
+        F: FnMut(MidiEventPacket),
     {
         match button {
             Button::Pad(pad) => {

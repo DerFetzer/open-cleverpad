@@ -1,7 +1,7 @@
 use crate::{
     hal::{ControlButton, ControlButtonLedEvent, PadLedEvent},
     hardware::{Bank, Leds, PadBank, PadLedsState},
-    midi::{MidiMessage, NoteOff, NoteOn},
+    midi::{MidiEventPacket, MidiMessage, NoteOff, NoteOn},
 };
 
 pub struct PadLedHandler {
@@ -27,7 +27,7 @@ impl PadLedHandler {
         self.current_channel
     }
 
-    pub fn handle_pad_button_event(&self, x: u8, y: u8, on: bool) -> [u8; 4] {
+    pub fn handle_pad_button_event(&self, x: u8, y: u8, on: bool) -> MidiEventPacket {
         // master_channel_leds_state[channel as usize - 1] =
         //     le.apply_to_leds_state(master_channel_leds_state[channel as usize - 1])
         match on {

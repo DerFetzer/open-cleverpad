@@ -463,11 +463,14 @@ impl Leds {
         }
     }
 
-    pub fn get_pad_state(&mut self) -> PadLedsState {
+    pub fn get_pad_state(&self) -> PadLedsState {
         self.pad_state
     }
+    pub fn get_pad_state_mut(&mut self) -> &mut PadLedsState {
+        &mut self.pad_state
+    }
 
-    pub fn get_button_state(&mut self) -> ControlButtonLedsState {
+    pub fn get_button_state(&self) -> ControlButtonLedsState {
         self.control_button_state
     }
 

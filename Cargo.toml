@@ -47,7 +47,7 @@ features = ["thumbv7-backend"]
 rtic-monotonics = { version = "2.1.0", features = ["stm32f103rb", "stm32_tim3"] }
 panic-halt = "1.0.0"
 usb-device = { version = "0.3.2", features = ["control-buffer-256"]}
-heapless = "0.9.3"
+heapless = { version = "0.9.3", features = ["defmt"] }
 num_enum = { version = "0.7.6", default-features = false }
 panic-reset = "0.1.1"
 usbd-serial = "0.2.2"

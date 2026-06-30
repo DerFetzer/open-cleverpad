@@ -136,7 +136,7 @@ pub const COLOR_RED: PadColor = PadColor { r: 3, g: 0, b: 0 };
 
 /// Describes a pad's color using RGB values in the range of [0, 3].
 ///
-/// The time is divided into 4 slots. The values tell how many of the slots the corresponding LED
+/// The time is divided into 3 slots. The values tell how many of the slots the corresponding LED
 /// should be turned on.
 ///
 /// Time slots have different lengths to implement some kind of gamma correction.

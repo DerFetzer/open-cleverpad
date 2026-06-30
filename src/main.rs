@@ -10,6 +10,7 @@ mod hardware;
 #[allow(static_mut_refs)]
 mod log;
 mod midi;
+mod sequencer;
 mod usb_midi;
 
 use rtic_monotonics::stm32::prelude::*;
@@ -31,14 +32,15 @@ mod app {
     use crate::midi::{
         ControlChange, EncoderMode, EncoderParameters, MidiMessage, NoteOff, NoteOn,
     };
+    use crate::sequencer::Sequencer;
     use crate::usb_midi::MidiClass;
     use crate::{Mono, log, usb_midi};
     use cortex_m::peripheral::NVIC;
     use heapless::spsc::{Consumer, Producer, Queue};
     use rtic_monotonics::stm32::prelude::*;
-    use stm32f1xx_hal::pac::{Peripherals, TIM1, TIM3};
+    use stm32f1xx_hal::pac::{Peripherals, TIM1, TIM2, TIM3};
     use stm32f1xx_hal::rcc::{self, RccBus};
-    use stm32f1xx_hal::timer::{CounterUs, Event};
+    use stm32f1xx_hal::timer::{CounterHz, CounterUs, Event};
     use stm32f1xx_hal::{
         // gpio::gpioa::*,
         gpio::*,
@@ -75,6 +77,7 @@ mod app {
         usb_dev: UsbDevice<'static, UsbBusType>,
         midi: MidiClass<'static, UsbBusType>,
         serial: SerialPort<'static, UsbBusType>,
+        sequencer: &'static mut Sequencer,
     }
 
     #[local]
@@ -85,11 +88,12 @@ mod app {
         prev_button_state: [u8; 11],
         button_event_c: Consumer<'static, ButtonEvent>,
         led_timer_handle: CounterUs<TIM1>,
+        sequencer_timer_handle: CounterHz<TIM2>,
         // debug_pin_pa9: PA9<Output<PushPull>>,
         // debug_pin_pa10: PA10<Output<PushPull>>,
     }
 
-    #[init(local = [BUTTON_QUEUE: Queue<ButtonEvent, 64> = Queue::new(), USB_BUS: Option<usb_device::bus::UsbBusAllocator<UsbBusType>> = None])]
+    #[init(local = [BUTTON_QUEUE: Queue<ButtonEvent, 64> = Queue::new(), USB_BUS: Option<usb_device::bus::UsbBusAllocator<UsbBusType>> = None, SEQUENCER: Sequencer = Sequencer::new()])]
     fn init(cx: init::Context) -> (Shared, Local) {
         assert_eq!(GAMMA_FACTORS.into_iter().sum::<u32>(), LED_BANK_DIVIDER);
 
@@ -254,9 +258,18 @@ mod app {
             .unwrap();
         led_timer_handle.listen(Event::Update);
 
+        let mut sequencer_timer_handle = dp.TIM2.counter_hz(&mut rcc);
+        // 120bpm * 60 seconds/minute * 24ppqn
+        sequencer_timer_handle.start((120 * 24 / 60).Hz()).unwrap(); // 120bpm * 24ppgn / 60 seconds/minute
+        sequencer_timer_handle.listen(Event::Update);
+
+        cx.local.SEQUENCER.init();
+
         enc::spawn().unwrap();
         enc_eval::spawn().unwrap();
         button::spawn().unwrap();
+
+        // text_scroll::spawn().unwrap();
 
         (
             Shared {
@@ -272,6 +285,7 @@ mod app {
                 usb_dev,
                 midi,
                 serial,
+                sequencer: cx.local.SEQUENCER,
             },
             Local {
                 encoders: Encoders::new(encoder_pins),
@@ -280,13 +294,14 @@ mod app {
                 prev_button_state: [0; 11],
                 button_event_c,
                 led_timer_handle,
+                sequencer_timer_handle,
                 // debug_pin_pa9: debug_pa9,
                 // debug_pin_pa10: debug_pa10,
             },
         )
     }
 
-    #[idle(local = [button_event_c], shared = [abs_encoder_positions, encoder_parameter_type, encoder_parameters, leds, midi, button_event_p])]
+    #[idle(local = [button_event_c], shared = [abs_encoder_positions, encoder_parameter_type, encoder_parameters, leds, midi, button_event_p, sequencer])]
     fn idle(mut cx: idle::Context) -> ! {
         let parameter_led_event = ControlButtonLedEvent {
             btn: ControlButton::Parameter(Parameter::Volume),
@@ -298,6 +313,7 @@ mod app {
         });
 
         let mut pad_handler = cx.shared.leds.lock(PadLedHandler::new);
+        let sequencer_active = true;
 
         loop {
             // Handle button events
@@ -310,9 +326,28 @@ mod app {
                 match e.btn {
                     // send midi
                     Button::Pad(Pad { x, y }) => {
-                        let midi = pad_handler.handle_pad_button_event(x, y, on);
-                        cx.shared.midi.lock(|m| m.enqueue(midi).ok());
-                        usb_poll_task::spawn().ok();
+                        if sequencer_active {
+                            if on {
+                                let sequencer = &mut cx.shared.sequencer;
+                                let leds = &mut cx.shared.leds;
+                                let midi = &mut cx.shared.midi;
+
+                                (leds, sequencer, midi).lock(|leds, sequencer, midi| {
+                                    sequencer.handle_button_press(
+                                        Button::Pad(Pad { x, y }),
+                                        |message| {
+                                            midi.enqueue(message).unwrap();
+                                        },
+                                    );
+                                    usb_poll_task::spawn().ok();
+                                    sequencer.draw(leds.get_pad_state_mut());
+                                });
+                            }
+                        } else {
+                            let midi = pad_handler.handle_pad_button_event(x, y, on);
+                            cx.shared.midi.lock(|m| m.enqueue(midi).ok());
+                            usb_poll_task::spawn().ok();
+                        }
                     }
                     Button::Control(ControlButton::Master(new_channel)) => {
                         if on {
@@ -538,6 +573,53 @@ mod app {
 
         *cx.local.count += 1;
         cx.local.led_timer_handle.clear_interrupt(Event::Update);
+    }
+
+    #[task(binds = TIM2, priority = 1, shared = [leds, midi, sequencer], local = [sequencer_timer_handle])]
+    fn sequencer_internal_step(cx: sequencer_internal_step::Context) {
+        (cx.shared.leds, cx.shared.sequencer, cx.shared.midi).lock(|leds, sequencer, midi| {
+            sequencer.step(|message| {
+                midi.enqueue(message).unwrap();
+            });
+            usb_poll_task::spawn().ok();
+            sequencer.draw(leds.get_pad_state_mut());
+        });
+        cx.local
+            .sequencer_timer_handle
+            .clear_interrupt(Event::Update);
+    }
+
+    #[task(priority = 1, shared = [leds])]
+    async fn text_scroll(mut cx: text_scroll::Context) {
+        use embedded_graphics::mono_font::MonoTextStyle;
+        use embedded_graphics::mono_font::ascii::FONT_5X7;
+        use embedded_graphics::prelude::*;
+        use embedded_graphics::text::Text;
+
+        let text_style = MonoTextStyle::new(&FONT_5X7, COLOR_RED);
+        // let text_style = MonoTextStyle::new(&PROFONT_7_POINT, COLOR_RED);
+        let text = "Hallo, Maus! Liebe, Liebe! <3";
+
+        let text_width = Text::new(text, Point::new(0, 6), text_style)
+            .bounding_box()
+            .size
+            .width;
+
+        loop {
+            let mut offset = 8;
+            while offset > -(text_width as i32) {
+                let text = Text::new(text, Point::new(offset, 6), text_style);
+                cx.shared.leds.lock(|leds| {
+                    let mut state = leds.get_pad_state();
+                    state.clear(COLOR_BLACK).unwrap();
+                    text.draw(&mut state).unwrap();
+                    leds.set_pad_state(state);
+                });
+                offset -= 1;
+
+                Mono::delay(200_u64.millis()).await;
+            }
+        }
     }
 
     #[task(priority = 2, local = [encoders], shared = [encoder_positions])]

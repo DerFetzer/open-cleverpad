@@ -1,4 +1,5 @@
 use core::cmp::min;
+use heapless::Vec;
 use num_enum::TryFromPrimitive;
 
 pub type MidiEventPacket = [u8; 4];
@@ -113,6 +114,174 @@ impl MidiMessage for ControlChange {
             }
             _ => None,
         }
+    }
+}
+
+macro_rules! real_time_message {
+    ($name:ident, $byte:literal) => {
+        #[derive(Copy, Clone)]
+        pub struct $name;
+
+        impl MidiMessage for $name {
+            fn to_bytes(&self) -> MidiEventPacket {
+                [0x0F, $byte, 0x00, 0x00]
+            }
+
+            fn from_bytes(bytes: MidiEventPacket) -> Option<Self>
+            where
+                Self: Sized,
+            {
+                if bytes[0] == 0x0F && bytes[1] == $byte {
+                    Some(Self)
+                } else {
+                    None
+                }
+            }
+        }
+    };
+}
+
+real_time_message!(Clock, 0xF8);
+real_time_message!(Start, 0xFA);
+real_time_message!(Continue, 0xFB);
+real_time_message!(Stop, 0xFC);
+
+const SYSEX_MAX_SIZE: usize = 128;
+
+#[derive(defmt::Format)]
+pub struct SysEx {
+    data: Vec<u8, SYSEX_MAX_SIZE>,
+}
+
+#[derive(defmt::Format)]
+pub enum SysExBufferResponse {
+    SysEx(SysEx),
+    InSysEx,
+    Other(MidiEventPacket),
+}
+
+#[derive(defmt::Format)]
+pub enum SysExBufferError {
+    Invalid,
+    Overflow,
+}
+
+const SYSEX_START: u8 = 0xF0;
+const SYSEX_END: u8 = 0xF7;
+
+#[derive(defmt::Format)]
+pub struct SysExBuffer {
+    message_in_progress: bool,
+    buf: Vec<u8, SYSEX_MAX_SIZE>,
+}
+
+impl SysExBuffer {
+    pub const fn new() -> Self {
+        Self {
+            message_in_progress: false,
+            buf: Vec::new(),
+        }
+    }
+
+    pub fn handle_packet(
+        &mut self,
+        bytes: MidiEventPacket,
+    ) -> Result<SysExBufferResponse, SysExBufferError> {
+        if ![0x04, 0x05, 0x06, 0x07].contains(&bytes[0]) {
+            // No SysEx packet
+            return Ok(SysExBufferResponse::Other(bytes));
+        }
+        if bytes[0] == 0x04 {
+            if bytes[1] == SYSEX_START {
+                defmt::info!("SysEx start");
+                if self.message_in_progress {
+                    self.reset();
+                    return Err(SysExBufferError::Invalid);
+                }
+                self.message_in_progress = true;
+                self.buf.clear();
+                self.buf.extend_from_slice(&bytes[2..]).unwrap();
+                Ok(SysExBufferResponse::InSysEx)
+            } else {
+                defmt::info!("SysEx continues");
+                if !self.message_in_progress {
+                    return Err(SysExBufferError::Invalid);
+                }
+                if self.buf.extend_from_slice(&bytes[1..]).is_err() {
+                    Err(SysExBufferError::Overflow)
+                } else {
+                    Ok(SysExBufferResponse::InSysEx)
+                }
+            }
+        } else if bytes[0] == 0x05 {
+            if bytes[1] == SYSEX_END {
+                defmt::info!("SysEx ends with following single byte");
+                if self.message_in_progress {
+                    Ok(self.finish_sys_ex())
+                } else {
+                    Err(SysExBufferError::Invalid)
+                }
+            } else {
+                defmt::info!("Single-byte System Comon Message");
+                Ok(SysExBufferResponse::Other(bytes))
+            }
+        } else if bytes[0] == 0x06 {
+            defmt::info!("SysEx ends with following two bytes");
+            if bytes[1] == SYSEX_START && bytes[2] == SYSEX_END {
+                defmt::info!("Empty SysEx");
+                return Ok(SysExBufferResponse::SysEx(SysEx {
+                    data: Default::default(),
+                }));
+            }
+            if !self.message_in_progress {
+                return Err(SysExBufferError::Invalid);
+            }
+            if bytes[2] == SYSEX_END {
+                if self.buf.push(bytes[1]).is_err() {
+                    Err(SysExBufferError::Overflow)
+                } else {
+                    Ok(self.finish_sys_ex())
+                }
+            } else {
+                Err(SysExBufferError::Invalid)
+            }
+        } else if bytes[0] == 0x07 {
+            defmt::info!("SysEx ends with following three bytes");
+            if bytes[1] == SYSEX_START && bytes[3] == SYSEX_END {
+                defmt::info!("One byte SysEx");
+                let mut data = Vec::new();
+                data.push(bytes[2]).unwrap();
+                return Ok(SysExBufferResponse::SysEx(SysEx { data }));
+            }
+            if !self.message_in_progress {
+                return Err(SysExBufferError::Invalid);
+            }
+            if bytes[3] == SYSEX_END {
+                if self.buf.extend_from_slice(&bytes[1..3]).is_err() {
+                    Err(SysExBufferError::Overflow)
+                } else {
+                    Ok(self.finish_sys_ex())
+                }
+            } else {
+                Err(SysExBufferError::Invalid)
+            }
+        } else {
+            Ok(SysExBufferResponse::Other(bytes))
+        }
+    }
+
+    fn finish_sys_ex(&mut self) -> SysExBufferResponse {
+        let sysex = SysEx {
+            data: self.buf.clone(),
+        };
+        self.buf.clear();
+        self.message_in_progress = false;
+        SysExBufferResponse::SysEx(sysex)
+    }
+
+    fn reset(&mut self) {
+        self.message_in_progress = false;
+        self.buf.clear();
     }
 }
 

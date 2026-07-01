@@ -30,7 +30,8 @@ mod app {
         ButtonMatrix, ButtonMatrixPins, EncoderPins, Encoders, LedPins, Leds, NUM_TIME_SLOTS,
     };
     use crate::midi::{
-        ControlChange, EncoderMode, EncoderParameters, MidiMessage, NoteOff, NoteOn,
+        ControlChange, EncoderMode, EncoderParameters, MidiMessage, NoteOff, NoteOn, SysExBuffer,
+        SysExBufferResponse,
     };
     use crate::sequencer::Sequencer;
     use crate::usb_midi::MidiClass;
@@ -301,7 +302,7 @@ mod app {
         )
     }
 
-    #[idle(local = [button_event_c], shared = [abs_encoder_positions, encoder_parameter_type, encoder_parameters, leds, midi, button_event_p, sequencer])]
+    #[idle(local = [button_event_c, sysex_buffer: SysExBuffer = SysExBuffer::new()], shared = [abs_encoder_positions, encoder_parameter_type, encoder_parameters, leds, midi, button_event_p, sequencer])]
     fn idle(mut cx: idle::Context) -> ! {
         let parameter_led_event = ControlButtonLedEvent {
             btn: ControlButton::Parameter(Parameter::Volume),
@@ -314,6 +315,8 @@ mod app {
 
         let mut pad_handler = cx.shared.leds.lock(PadLedHandler::new);
         let sequencer_active = true;
+
+        let sysex_buffer = cx.local.sysex_buffer;
 
         loop {
             // Handle button events
@@ -405,7 +408,25 @@ mod app {
                 .lock(|m| (m.dequeue(), m.read_queue_has_space_for_packet()));
 
             if let Some(b) = message {
-                defmt::info!("Got midi message: {}", message);
+                defmt::info!("Got midi message: {:x}", b);
+
+                match sysex_buffer.handle_packet(b) {
+                    Ok(SysExBufferResponse::Other(_)) => {}
+                    Ok(SysExBufferResponse::InSysEx) => {
+                        defmt::info!("In SysEx message");
+                        continue;
+                    }
+                    Ok(SysExBufferResponse::SysEx(sysex)) => {
+                        // defmt::info!("Got SysEx message");
+                        defmt::info!("Got SysEx message: {}", sysex);
+                        continue;
+                    }
+                    Err(e) => {
+                        defmt::warn!("SysEx error: {}", e);
+                        continue;
+                    }
+                }
+
                 let mut led_event = None;
                 let mut channel = pad_handler.get_current_channel();
 

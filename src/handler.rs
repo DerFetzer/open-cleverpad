@@ -28,8 +28,6 @@ impl PadLedHandler {
     }
 
     pub fn handle_pad_button_event(&self, x: u8, y: u8, on: bool) -> MidiEventPacket {
-        // master_channel_leds_state[channel as usize - 1] =
-        //     le.apply_to_leds_state(master_channel_leds_state[channel as usize - 1])
         match on {
             true => NoteOn::new(self.current_channel - 1, y * 8 + x, 127)
                 .unwrap()

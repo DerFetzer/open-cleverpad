@@ -10,7 +10,7 @@ use heapless::{Vec, index_set::FnvIndexSet};
 use crate::{
     hal::{Button, COLOR_BLACK, COLOR_WHITE, PadColor},
     hardware::PadLedsState,
-    midi::{MidiEventPacket, MidiMessage, NoteOff, NoteOn},
+    midi::{Clock, MidiEventPacket, MidiMessage, NoteOff, NoteOn},
 };
 
 #[derive(defmt::Format, Clone, Copy, Default)]
@@ -269,10 +269,12 @@ impl Sequencer {
         self.channels[self.active_channel as usize].draw(self.active_octave, pads);
     }
 
+    /// Has to be called with 24ppqn
     pub fn step<F>(&mut self, mut midi_callback: F)
     where
         F: FnMut(MidiEventPacket),
     {
+        midi_callback(Clock.to_bytes());
         self.step_counter = self.step_counter.wrapping_add(1);
         if self.step_counter.is_multiple_of(self.step_divider) {
             for channel in &mut self.channels {

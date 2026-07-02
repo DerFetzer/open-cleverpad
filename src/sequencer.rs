@@ -265,6 +265,12 @@ impl Sequencer {
         }
     }
 
+    pub fn reset_position(&mut self) {
+        for channel in &mut self.channels {
+            channel.reset_position();
+        }
+    }
+
     pub fn draw(&self, pads: &mut PadLedsState) {
         self.channels[self.active_channel as usize].draw(self.active_octave, pads);
     }

@@ -79,6 +79,7 @@ mod app {
         midi: MidiClass<'static, UsbBusType>,
         serial: SerialPort<'static, UsbBusType>,
         sequencer: &'static mut Sequencer,
+        sequencer_timer_handle: CounterHz<TIM2>,
     }
 
     #[local]
@@ -89,7 +90,6 @@ mod app {
         prev_button_state: [u8; 11],
         button_event_c: Consumer<'static, ButtonEvent>,
         led_timer_handle: CounterUs<TIM1>,
-        sequencer_timer_handle: CounterHz<TIM2>,
         // debug_pin_pa9: PA9<Output<PushPull>>,
         // debug_pin_pa10: PA10<Output<PushPull>>,
     }
@@ -259,10 +259,8 @@ mod app {
             .unwrap();
         led_timer_handle.listen(Event::Update);
 
-        let mut sequencer_timer_handle = dp.TIM2.counter_hz(&mut rcc);
-        // 120bpm * 60 seconds/minute * 24ppqn
-        sequencer_timer_handle.start((120 * 24 / 60).Hz()).unwrap(); // 120bpm * 24ppgn / 60 seconds/minute
-        sequencer_timer_handle.listen(Event::Update);
+        let sequencer_timer_handle = dp.TIM2.counter_hz(&mut rcc);
+        sequencer_start::spawn(120).unwrap();
 
         cx.local.SEQUENCER.init();
 
@@ -287,6 +285,7 @@ mod app {
                 midi,
                 serial,
                 sequencer: cx.local.SEQUENCER,
+                sequencer_timer_handle,
             },
             Local {
                 encoders: Encoders::new(encoder_pins),
@@ -295,7 +294,6 @@ mod app {
                 prev_button_state: [0; 11],
                 button_event_c,
                 led_timer_handle,
-                sequencer_timer_handle,
                 // debug_pin_pa9: debug_pa9,
                 // debug_pin_pa10: debug_pa10,
             },
@@ -592,17 +590,39 @@ mod app {
         cx.local.led_timer_handle.clear_interrupt(Event::Update);
     }
 
-    #[task(binds = TIM2, priority = 1, shared = [leds, midi, sequencer], local = [sequencer_timer_handle])]
-    fn sequencer_internal_step(cx: sequencer_internal_step::Context) {
+    #[task(priority = 1, shared = [sequencer, sequencer_timer_handle])]
+    async fn sequencer_stop(mut cx: sequencer_stop::Context) {
+        cx.shared
+            .sequencer_timer_handle
+            .lock(|th| th.unlisten(Event::Update));
+        cx.shared.sequencer.lock(|s| s.reset_position());
+    }
+
+    #[task(priority = 1, shared = [sequencer, sequencer_timer_handle])]
+    async fn sequencer_start(mut cx: sequencer_start::Context, bpm: u16) {
+        cx.shared.sequencer.lock(|s| s.reset_position());
+        cx.shared.sequencer_timer_handle.lock(|th| {
+            th.start((bpm as u32 * 24 / 60).Hz()).unwrap(); // bpm * 24ppgn / 60 seconds/minute
+            th.listen(Event::Update);
+        });
+    }
+
+    #[task(priority = 1, shared = [leds, midi, sequencer])]
+    async fn sequencer_step(cx: sequencer_step::Context) {
         (cx.shared.leds, cx.shared.sequencer, cx.shared.midi).lock(|leds, sequencer, midi| {
             sequencer.step(|message| {
                 midi.enqueue(message).unwrap();
             });
             sequencer.draw(leds.get_pad_state_mut());
         });
-        cx.local
+    }
+
+    #[task(binds = TIM2, priority = 1, shared = [leds, midi, sequencer, sequencer_timer_handle])]
+    fn sequencer_step_internal(mut cx: sequencer_step_internal::Context) {
+        cx.shared
             .sequencer_timer_handle
-            .clear_interrupt(Event::Update);
+            .lock(|th| th.clear_interrupt(Event::Update));
+        sequencer_step::spawn().ok();
     }
 
     #[task(priority = 1, shared = [leds])]

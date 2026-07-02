@@ -20,25 +20,21 @@ stm32_tim3_monotonic!(Mono, 1_000_000);
 #[rtic::app(device = stm32f1xx_hal::pac, peripherals = true, dispatchers = [EXTI1, EXTI2, EXTI3])]
 mod app {
     use crate::hal::ButtonEventEdge::{NegEdge, PosEdge};
-    use crate::hal::{
-        Button, ButtonEvent, ButtonEventEdge, COLOR_AQUA, COLOR_BLACK, COLOR_BLUE, COLOR_GREEN,
-        COLOR_PURPLE, COLOR_RED, COLOR_WHITE, COLOR_YELLOW, ControlButton, ControlButtonLedEvent,
-        DIRECTION_TYPES, LedEvent, MODE_TYPES, Pad, PadColor, PadLedEvent, Parameter,
-    };
-    use crate::handler::PadLedHandler;
+    use crate::hal::{ButtonEvent, ButtonEventEdge, COLOR_BLACK, COLOR_RED, EncoderEvent};
+    use crate::handler::ControllerHandler;
     use crate::hardware::{
-        ButtonMatrix, ButtonMatrixPins, EncoderPins, Encoders, LedPins, Leds, NUM_TIME_SLOTS,
+        ButtonMatrix, ButtonMatrixPins, EncoderPins, Encoders, LedPins, Leds, LedsState,
+        NUM_TIME_SLOTS, PadLedsState,
     };
-    use crate::midi::{
-        ControlChange, EncoderMode, EncoderParameters, MidiMessage, NoteOff, NoteOn, SysExBuffer,
-        SysExBufferResponse,
-    };
+    use crate::midi::{Midi, MidiEventPacket, SysExBuffer, SysExBufferResponse};
     use crate::sequencer::Sequencer;
-    use crate::usb_midi::MidiClass;
+    use crate::usb_midi::{MidiClass, MidiEventPacketSender};
     use crate::{Mono, log, usb_midi};
     use cortex_m::peripheral::NVIC;
     use heapless::spsc::{Consumer, Producer, Queue};
     use rtic_monotonics::stm32::prelude::*;
+    use rtic_sync::channel::Sender;
+    use rtic_sync::make_channel;
     use stm32f1xx_hal::pac::{Peripherals, TIM1, TIM2, TIM3};
     use stm32f1xx_hal::rcc::{self, RccBus};
     use stm32f1xx_hal::timer::{CounterHz, CounterUs, Event};
@@ -69,11 +65,8 @@ mod app {
 
     #[shared]
     struct Shared {
-        leds: Leds,
+        leds_state: Option<LedsState>,
         encoder_positions: [i32; 8],
-        encoder_parameter_type: Parameter,
-        encoder_parameters: [EncoderParameters; 8],
-        abs_encoder_positions: [[u8; 8]; 8],
         button_event_p: Producer<'static, ButtonEvent>,
         usb_dev: UsbDevice<'static, UsbBusType>,
         midi: MidiClass<'static, UsbBusType>,
@@ -84,17 +77,21 @@ mod app {
 
     #[local]
     struct Local {
+        leds: Leds,
         encoders: Encoders,
         button_matrix: ButtonMatrix,
         prev_encoder_positions: [i32; 8],
         prev_button_state: [u8; 11],
         button_event_c: Consumer<'static, ButtonEvent>,
+        encoder_event_p: Producer<'static, EncoderEvent>,
+        encoder_event_c: Consumer<'static, EncoderEvent>,
         led_timer_handle: CounterUs<TIM1>,
+        tx_midi: Sender<'static, MidiEventPacket, 32>,
         // debug_pin_pa9: PA9<Output<PushPull>>,
         // debug_pin_pa10: PA10<Output<PushPull>>,
     }
 
-    #[init(local = [BUTTON_QUEUE: Queue<ButtonEvent, 64> = Queue::new(), USB_BUS: Option<usb_device::bus::UsbBusAllocator<UsbBusType>> = None, SEQUENCER: Sequencer = Sequencer::new()])]
+    #[init(local = [BUTTON_QUEUE: Queue<ButtonEvent, 64> = Queue::new(), ENCODER_QUEUE: Queue<EncoderEvent, 64> = Queue::new(), USB_BUS: Option<usb_device::bus::UsbBusAllocator<UsbBusType>> = None, SEQUENCER: Sequencer = Sequencer::new()])]
     fn init(cx: init::Context) -> (Shared, Local) {
         assert_eq!(GAMMA_FACTORS.into_iter().sum::<u32>(), LED_BANK_DIVIDER);
 
@@ -220,6 +217,11 @@ mod app {
             Consumer<'static, ButtonEvent>,
         ) = cx.local.BUTTON_QUEUE.split();
 
+        let (encoder_event_p, encoder_event_c): (
+            Producer<'static, EncoderEvent>,
+            Consumer<'static, EncoderEvent>,
+        ) = cx.local.ENCODER_QUEUE.split();
+
         // USB
         let _usb_pullup = gpioa
             .pa8
@@ -238,7 +240,9 @@ mod app {
         let usb_bus = cx.local.USB_BUS.as_ref().unwrap();
 
         let serial = SerialPort::new(usb_bus);
-        let midi = usb_midi::MidiClass::new(usb_bus);
+
+        let (tx_midi, rx_midi) = make_channel!(MidiEventPacket, 32);
+        let midi = usb_midi::MidiClass::new(usb_bus, rx_midi);
 
         let usb_dev = UsbDeviceBuilder::new(usb_bus, UsbVidPid(VID, PID))
             .strings(&[StringDescriptors::new(LangID::EN)
@@ -260,26 +264,20 @@ mod app {
         led_timer_handle.listen(Event::Update);
 
         let sequencer_timer_handle = dp.TIM2.counter_hz(&mut rcc);
-        sequencer_start::spawn(120).unwrap();
+        // sequencer_start::spawn(120).unwrap();
 
-        cx.local.SEQUENCER.init();
+        cx.local
+            .SEQUENCER
+            .init(MidiEventPacketSender::new(tx_midi.clone()));
 
         enc::spawn().unwrap();
         enc_eval::spawn().unwrap();
         button::spawn().unwrap();
 
-        // text_scroll::spawn().unwrap();
-
         (
             Shared {
-                leds: Leds::new(led_pins),
+                leds_state: None,
                 encoder_positions: [0; 8],
-                encoder_parameter_type: Parameter::Volume,
-                encoder_parameters: [EncoderParameters {
-                    mode: EncoderMode::EncL,
-                    speed_multiplier: 10,
-                }; 8],
-                abs_encoder_positions: [[64; 8]; 8],
                 button_event_p,
                 usb_dev,
                 midi,
@@ -288,31 +286,27 @@ mod app {
                 sequencer_timer_handle,
             },
             Local {
+                leds: Leds::new(led_pins),
                 encoders: Encoders::new(encoder_pins),
                 button_matrix: ButtonMatrix::new(button_pins),
                 prev_encoder_positions: [0; 8],
                 prev_button_state: [0; 11],
                 button_event_c,
+                encoder_event_p,
+                encoder_event_c,
                 led_timer_handle,
+                tx_midi,
                 // debug_pin_pa9: debug_pa9,
                 // debug_pin_pa10: debug_pa10,
             },
         )
     }
 
-    #[idle(local = [button_event_c, sysex_buffer: SysExBuffer = SysExBuffer::new()], shared = [abs_encoder_positions, encoder_parameter_type, encoder_parameters, leds, midi, button_event_p, sequencer])]
+    #[idle(local = [button_event_c, sysex_buffer: SysExBuffer = SysExBuffer::new(), tx_midi, encoder_event_c], shared = [midi, button_event_p, sequencer])]
     fn idle(mut cx: idle::Context) -> ! {
-        let parameter_led_event = ControlButtonLedEvent {
-            btn: ControlButton::Parameter(Parameter::Volume),
-            on: true,
-        };
-
-        cx.shared.leds.lock(|l| {
-            l.apply_control_button_event(parameter_led_event);
-        });
-
-        let mut pad_handler = cx.shared.leds.lock(PadLedHandler::new);
-        let sequencer_active = true;
+        let mut pad_handler =
+            ControllerHandler::new(MidiEventPacketSender::new(cx.local.tx_midi.clone()));
+        let sequencer_active = false;
 
         let sysex_buffer = cx.local.sysex_buffer;
 
@@ -324,79 +318,27 @@ mod app {
                     ButtonEventEdge::NegEdge => false,
                     ButtonEventEdge::PosEdge => true,
                 };
-                match e.btn {
-                    // send midi
-                    Button::Pad(Pad { x, y }) => {
-                        if sequencer_active {
-                            if on {
-                                let sequencer = &mut cx.shared.sequencer;
-                                let leds = &mut cx.shared.leds;
-                                let midi = &mut cx.shared.midi;
+                if sequencer_active {
+                    if on {
+                        let sequencer = &mut cx.shared.sequencer;
 
-                                (leds, sequencer, midi).lock(|leds, sequencer, midi| {
-                                    sequencer.handle_button_press(
-                                        Button::Pad(Pad { x, y }),
-                                        |message| {
-                                            midi.enqueue(message).unwrap();
-                                        },
-                                    );
-                                    sequencer.draw(leds.get_pad_state_mut());
-                                });
-                            }
-                        } else {
-                            let midi = pad_handler.handle_pad_button_event(x, y, on);
-                            cx.shared.midi.lock(|m| m.enqueue(midi).ok());
-                        }
+                        sequencer.lock(|sequencer| {
+                            sequencer.handle_button_press(e.btn);
+                            sequencer.draw();
+                        });
                     }
-                    Button::Control(ControlButton::Master(new_channel)) => {
-                        if on {
-                            // switch midi channel for pads
-                            cx.shared.leds.lock(|l| {
-                                pad_handler.handle_master_button_event(new_channel, l);
-                            })
-                        }
-                    }
-                    Button::Control(ControlButton::Parameter(param)) => {
-                        if on {
-                            let encoder_parameter_type =
-                                cx.shared.encoder_parameter_type.lock(|ept| *ept);
+                } else {
+                    pad_handler.handle_button_event(e);
+                }
+            }
 
-                            let parameter_off_event = ControlButtonLedEvent {
-                                btn: ControlButton::Parameter(encoder_parameter_type),
-                                on: false,
-                            };
-                            let parameter_on_event = ControlButtonLedEvent {
-                                btn: ControlButton::Parameter(param),
-                                on: true,
-                            };
-
-                            cx.shared.encoder_parameter_type.lock(|ept| {
-                                *ept = param;
-                            });
-
-                            cx.shared.leds.lock(|l| {
-                                l.apply_control_button_event(parameter_off_event);
-                                l.apply_control_button_event(parameter_on_event);
-                            });
-                        }
-                    }
-                    Button::Control(ControlButton::Arrow(dir)) => {
-                        let midi = match on {
-                            true => NoteOn::new(8, dir as u8, 127).unwrap().to_bytes(),
-                            false => NoteOff::new(8, dir as u8).unwrap().to_bytes(),
-                        };
-
-                        cx.shared.midi.lock(|m| m.enqueue(midi).ok());
-                    }
-                    Button::Control(ControlButton::Mode(mode)) => {
-                        let midi = match on {
-                            true => NoteOn::new(9, mode as u8, 127).unwrap().to_bytes(),
-                            false => NoteOff::new(9, mode as u8).unwrap().to_bytes(),
-                        };
-
-                        cx.shared.midi.lock(|m| m.enqueue(midi).ok());
-                    }
-                };
+            // Handle encoder events
+            if let Some(e) = cx.local.encoder_event_c.dequeue() {
+                if sequencer_active {
+                    // TODO
+                } else {
+                    pad_handler.handle_encoder_event(e);
+                }
             }
 
             // Handle midi messages
@@ -408,8 +350,8 @@ mod app {
             if let Some(b) = message {
                 defmt::info!("Got midi message: {:x}", b);
 
-                match sysex_buffer.handle_packet(b) {
-                    Ok(SysExBufferResponse::Other(_)) => {}
+                let midi = match sysex_buffer.handle_packet(b) {
+                    Ok(SysExBufferResponse::Other(packet)) => Midi::from_bytes(packet),
                     Ok(SysExBufferResponse::InSysEx) => {
                         defmt::info!("In SysEx message");
                         continue;
@@ -417,137 +359,20 @@ mod app {
                     Ok(SysExBufferResponse::SysEx(sysex)) => {
                         // defmt::info!("Got SysEx message");
                         defmt::info!("Got SysEx message: {}", sysex);
-                        continue;
+                        Midi::SysEx(sysex)
                     }
                     Err(e) => {
                         defmt::warn!("SysEx error: {}", e);
                         continue;
                     }
+                };
+
+                if sequencer_active {
+                    // TODO
+                } else {
+                    pad_handler.handle_midi(midi);
                 }
 
-                let mut led_event = None;
-                let mut channel = pad_handler.get_current_channel();
-
-                if let Some(note_on) = NoteOn::from_bytes(b) {
-                    defmt::info!("{}", note_on);
-                    match note_on.channel {
-                        0..=7 => {
-                            let x = note_on.note % 8;
-                            let y = note_on.note / 8;
-
-                            let rgb = match note_on.velocity {
-                                127 => {
-                                    // show preset color depending on y, for Ardour compatibility
-                                    match y {
-                                        0 => COLOR_GREEN,
-                                        1 => COLOR_YELLOW,
-                                        2 => COLOR_RED,
-                                        3 => COLOR_PURPLE,
-                                        4 => COLOR_AQUA,
-                                        5 => COLOR_BLUE,
-                                        6 | 7 => COLOR_WHITE,
-                                        _ => unreachable!(),
-                                    }
-                                }
-                                num => PadColor::from_value(num),
-                            };
-
-                            if x < 8 && y < 8 {
-                                led_event = Some(LedEvent::Pad(PadLedEvent {
-                                    pad: Pad { x, y },
-                                    color: rgb,
-                                }));
-                                channel = note_on.channel + 1;
-                            }
-                        }
-                        8 if note_on.note < 4 => {
-                            led_event = Some(LedEvent::ControlButton(ControlButtonLedEvent {
-                                btn: ControlButton::Arrow(DIRECTION_TYPES[note_on.note as usize]),
-                                on: note_on.velocity != 0,
-                            }));
-                        }
-                        9 if note_on.note < 4 => {
-                            led_event = Some(LedEvent::ControlButton(ControlButtonLedEvent {
-                                btn: ControlButton::Mode(MODE_TYPES[note_on.note as usize]),
-                                on: note_on.velocity != 0,
-                            }));
-                        }
-                        _ => (), // ignore message
-                    }
-                } else if let Some(note_off) = NoteOff::from_bytes(b) {
-                    defmt::info!("{}", note_off);
-                    match note_off.channel {
-                        0..=7 => {
-                            let x = note_off.note % 8;
-                            let y = note_off.note / 8;
-
-                            if x < 8 && y < 8 {
-                                led_event = Some(LedEvent::Pad(PadLedEvent {
-                                    pad: Pad { x, y },
-                                    color: COLOR_BLACK,
-                                }));
-                                channel = note_off.channel + 1;
-                            }
-                        }
-                        8 => {
-                            led_event = Some(LedEvent::ControlButton(ControlButtonLedEvent {
-                                btn: ControlButton::Arrow(DIRECTION_TYPES[note_off.note as usize]),
-                                on: false,
-                            }));
-                        }
-                        9 => {
-                            led_event = Some(LedEvent::ControlButton(ControlButtonLedEvent {
-                                btn: ControlButton::Mode(MODE_TYPES[note_off.note as usize]),
-                                on: false,
-                            }));
-                        }
-                        _ => (), // ignore message
-                    }
-                } else if let Some(cc) = ControlChange::from_bytes(b) {
-                    defmt::info!("{}", cc);
-                    if cc.controller > 0 && cc.controller < 9 {
-                        let encoder_type = cc.channel & 0b111;
-                        cx.shared.abs_encoder_positions.lock(|pos| {
-                            pos[encoder_type as usize][cc.controller as usize - 1] = cc.value;
-                        });
-                    } else if cc.controller == 110 && cc.value < 8 {
-                        cx.shared.button_event_p.lock(|bep| {
-                            bep.enqueue(ButtonEvent {
-                                btn: Button::Control(ControlButton::Parameter(
-                                    Parameter::try_from(cc.value).unwrap(),
-                                )),
-                                event: ButtonEventEdge::PosEdge,
-                            })
-                            .ok();
-                        })
-                    } else if cc.controller == 111 && cc.value < 8 {
-                        cx.shared.button_event_p.lock(|bep| {
-                            bep.enqueue(ButtonEvent {
-                                btn: Button::Control(ControlButton::Master(cc.value + 1)),
-                                event: ButtonEventEdge::PosEdge,
-                            })
-                            .ok();
-                        })
-                    } else if cc.controller == 112 {
-                        if let Ok(mode) = EncoderMode::try_from(cc.value & 0b111) {
-                            let parameter_type = cc.channel & 0b111;
-                            cx.shared.encoder_parameters.lock(|m| {
-                                m[parameter_type as usize] = EncoderParameters {
-                                    mode,
-                                    ..m[parameter_type as usize]
-                                }
-                            });
-                        }
-                    } else if cc.controller == 113 && cc.value > 0 && cc.value <= 33 {
-                        let parameter_type = cc.channel & 0b111;
-                        cx.shared.encoder_parameters.lock(|m| {
-                            m[parameter_type as usize] = EncoderParameters {
-                                speed_multiplier: cc.value,
-                                ..m[parameter_type as usize]
-                            }
-                        });
-                    }
-                }
                 if has_space_for_packet {
                     // There is enough capacity in the queue again.
                     unsafe {
@@ -555,32 +380,29 @@ mod app {
                         NVIC::unmask(stm32f1xx_hal::pac::Interrupt::USB_HP_CAN_TX);
                     }
                 }
-
-                if let Some(le) = led_event {
-                    defmt::info!("Handle {}", le);
-                    cx.shared.leds.lock(|leds| {
-                        if let LedEvent::Pad(_) = le
-                            && channel == pad_handler.get_current_channel()
-                        {
-                            leds.apply_event(le);
-                        }
-                        if let LedEvent::Pad(pad_event) = le {
-                            pad_handler.apply_led_event(pad_event, channel);
-                        }
-                    });
-                }
             }
         }
     }
 
-    #[task(binds = TIM1_UP, priority = 3, shared = [leds], local = [led_timer_handle, count: u32 = 0, current_mod: u32 = 1, last_time_slot: usize = 0])]
+    #[task(priority = 1, shared = [leds_state])]
+    async fn update_leds_state(mut cx: update_leds_state::Context, leds_state: LedsState) {
+        cx.shared.leds_state.lock(|ls| *ls = Some(leds_state));
+    }
+
+    #[task(binds = TIM1_UP, priority = 3, shared = [leds_state], local = [leds, led_timer_handle, count: u32 = 0, current_mod: u32 = 1, last_time_slot: usize = 0])]
     fn led_bank(mut cx: led_bank::Context) {
         if (*cx.local.count).is_multiple_of(*cx.local.current_mod) {
-            let current_time_slot: usize = cx.shared.leds.lock(|leds| leds.write_next_bank());
+            let current_time_slot: usize = cx.local.leds.write_next_bank();
 
             if current_time_slot != *cx.local.last_time_slot {
+                // Reset count and set mod
                 *cx.local.count = 0;
                 *cx.local.current_mod = GAMMA_FACTORS[current_time_slot];
+
+                // Check for new state
+                if let Some(leds_state) = cx.shared.leds_state.lock(|ls| ls.take()) {
+                    cx.local.leds.set_leds_state(leds_state);
+                }
             }
 
             *cx.local.last_time_slot = current_time_slot;
@@ -607,17 +429,12 @@ mod app {
         });
     }
 
-    #[task(priority = 1, shared = [leds, midi, sequencer])]
-    async fn sequencer_step(cx: sequencer_step::Context) {
-        (cx.shared.leds, cx.shared.sequencer, cx.shared.midi).lock(|leds, sequencer, midi| {
-            sequencer.step(|message| {
-                midi.enqueue(message).unwrap();
-            });
-            sequencer.draw(leds.get_pad_state_mut());
-        });
+    #[task(priority = 1, shared = [sequencer])]
+    async fn sequencer_step(mut cx: sequencer_step::Context) {
+        cx.shared.sequencer.lock(|s| s.step());
     }
 
-    #[task(binds = TIM2, priority = 1, shared = [leds, midi, sequencer, sequencer_timer_handle])]
+    #[task(binds = TIM2, priority = 1, shared = [midi, sequencer, sequencer_timer_handle])]
     fn sequencer_step_internal(mut cx: sequencer_step_internal::Context) {
         cx.shared
             .sequencer_timer_handle
@@ -625,8 +442,8 @@ mod app {
         sequencer_step::spawn().ok();
     }
 
-    #[task(priority = 1, shared = [leds])]
-    async fn text_scroll(mut cx: text_scroll::Context) {
+    #[task(priority = 1)]
+    async fn text_scroll(_cx: text_scroll::Context) {
         use embedded_graphics::mono_font::MonoTextStyle;
         use embedded_graphics::mono_font::ascii::FONT_5X7;
         use embedded_graphics::prelude::*;
@@ -642,15 +459,17 @@ mod app {
             .width;
 
         loop {
+            let mut pad_state = PadLedsState::default();
             let mut offset = 8;
             while offset > -(text_width as i32) {
                 let text = Text::new(text, Point::new(offset, 6), text_style);
-                cx.shared.leds.lock(|leds| {
-                    let mut state = leds.get_pad_state();
-                    state.clear(COLOR_BLACK).unwrap();
-                    text.draw(&mut state).unwrap();
-                    leds.set_pad_state(state);
-                });
+                pad_state.clear(COLOR_BLACK).unwrap();
+                text.draw(&mut pad_state).unwrap();
+                update_leds_state::spawn(LedsState {
+                    pad_state,
+                    control_button_state: Default::default(),
+                })
+                .ok();
                 offset -= 1;
 
                 Mono::delay(200_u64.millis()).await;
@@ -674,7 +493,7 @@ mod app {
         }
     }
 
-    #[task(priority = 1, local = [prev_encoder_positions], shared = [encoder_positions, abs_encoder_positions, encoder_parameter_type, encoder_parameters, midi])]
+    #[task(priority = 1, local = [prev_encoder_positions, encoder_event_p], shared = [encoder_positions, midi])]
     async fn enc_eval(mut cx: enc_eval::Context) -> ! {
         loop {
             let baseline = Mono::now();
@@ -683,31 +502,14 @@ mod app {
 
             // Handle encoder changes
             if new_encoder_positions != encoder_positions {
+                let mut encoder_event = EncoderEvent::default();
                 for i in 0..8 {
                     let diff: i32 = new_encoder_positions[i] - encoder_positions[i];
                     if diff != 0 {
-                        let parameter_type = cx.shared.encoder_parameter_type.lock(|t| *t as u8);
-                        let encoder_parameters = cx
-                            .shared
-                            .encoder_parameters
-                            .lock(|p| p[parameter_type as usize]);
-                        let value = if encoder_parameters.mode != EncoderMode::Abs {
-                            encoder_parameters.diff_to_value(diff)
-                        } else {
-                            cx.shared.abs_encoder_positions.lock(|p| {
-                                let abs_value = p[parameter_type as usize][i];
-                                let new_abs_value =
-                                    encoder_parameters.apply_diff_to_abs_value(diff, abs_value);
-                                p[parameter_type as usize][i] = new_abs_value;
-                                new_abs_value
-                            })
-                        };
-                        let midi = ControlChange::new(parameter_type, i as u8 + 1, value).unwrap();
-                        let midi_bytes = midi.to_bytes();
-                        defmt::info!("Create {} from encoders", midi);
-                        cx.shared.midi.lock(|m| m.enqueue(midi_bytes).ok());
+                        encoder_event.0[i] = diff;
                     }
                 }
+                cx.local.encoder_event_p.enqueue(encoder_event).ok();
                 *cx.local.prev_encoder_positions = new_encoder_positions;
             }
 

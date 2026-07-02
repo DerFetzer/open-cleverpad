@@ -11,6 +11,40 @@ pub trait MidiMessage {
         Self: Sized;
 }
 
+pub enum Midi {
+    NoteOn(NoteOn),
+    NoteOff(NoteOff),
+    CC(ControlChange),
+    Clock(Clock),
+    Start(Start),
+    Continue(Continue),
+    Stop(Stop),
+    SysEx(SysEx),
+    Unknown(MidiEventPacket),
+}
+
+impl Midi {
+    pub fn from_bytes(bytes: MidiEventPacket) -> Self {
+        if let Some(note_on) = NoteOn::from_bytes(bytes) {
+            Self::NoteOn(note_on)
+        } else if let Some(note_off) = NoteOff::from_bytes(bytes) {
+            Self::NoteOff(note_off)
+        } else if let Some(cc) = ControlChange::from_bytes(bytes) {
+            Self::CC(cc)
+        } else if let Some(clock) = Clock::from_bytes(bytes) {
+            Self::Clock(clock)
+        } else if let Some(start) = Start::from_bytes(bytes) {
+            Self::Start(start)
+        } else if let Some(cont) = Continue::from_bytes(bytes) {
+            Self::Continue(cont)
+        } else if let Some(stop) = Stop::from_bytes(bytes) {
+            Self::Stop(stop)
+        } else {
+            Self::Unknown(bytes)
+        }
+    }
+}
+
 #[derive(Debug, defmt::Format)]
 pub struct NoteOn {
     pub channel: u8,

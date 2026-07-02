@@ -52,7 +52,7 @@ pub enum Parameter {
     Control4,
 }
 
-#[derive(Clone, Copy, Debug, defmt::Format)]
+#[derive(Clone, Copy, Debug, defmt::Format, PartialEq, Eq)]
 pub enum ButtonEventEdge {
     PosEdge,
     NegEdge,
@@ -77,6 +77,9 @@ pub static DIRECTION_TYPES: [Direction; 4] = [
 ];
 
 pub static MODE_TYPES: [Mode; 4] = [Mode::Clip, Mode::Mode1, Mode::Mode2, Mode::Set];
+
+#[derive(Clone, Copy, Debug, defmt::Format, Default)]
+pub struct EncoderEvent(pub [i32; 8]);
 
 #[derive(Clone, Copy, Debug, defmt::Format)]
 pub struct ButtonEvent {

@@ -1,7 +1,7 @@
 use core::convert::Infallible;
 
 use crate::Mono;
-use crate::hal::{ControlButton, ControlButtonLedEvent, LedEvent, Pad, PadColor, PadLedEvent, Rgb};
+use crate::hal::{ControlButton, ControlButtonLedEvent, Pad, PadColor, PadLedEvent, Rgb};
 use cortex_m::asm::delay;
 use embedded_graphics::prelude::*;
 use rtic_monotonics::rtic_time::embedded_hal_async::delay::DelayNs;
@@ -307,6 +307,10 @@ impl ControlButtonBank {
 pub struct PadLedsState(pub [[u32; NUM_PAD_BANKS]; NUM_TIME_SLOTS]);
 
 impl PadLedsState {
+    pub const fn new() -> Self {
+        Self([[0; NUM_PAD_BANKS]; NUM_TIME_SLOTS])
+    }
+
     pub fn apply_event(&mut self, event: PadLedEvent) {
         let x = event.pad.x;
         let y = event.pad.y;
@@ -386,6 +390,10 @@ impl OriginDimensions for PadLedsState {
 pub struct ControlButtonLedsState(pub [[u32; NUM_BUTTON_BANKS]; NUM_TIME_SLOTS]);
 
 impl ControlButtonLedsState {
+    pub const fn new() -> Self {
+        Self([[0; NUM_BUTTON_BANKS]; NUM_TIME_SLOTS])
+    }
+
     pub fn apply_event(&mut self, event: ControlButtonLedEvent) {
         let on = event.on;
 
@@ -442,10 +450,24 @@ impl ControlButtonLedsState {
         }
     }
 }
+
+#[derive(Copy, Clone, Default)]
+pub struct LedsState {
+    pub pad_state: PadLedsState,
+    pub control_button_state: ControlButtonLedsState,
+}
+
+impl LedsState {
+    pub const fn new() -> Self {
+        Self {
+            pad_state: PadLedsState::new(),
+            control_button_state: ControlButtonLedsState::new(),
+        }
+    }
+}
 pub struct Leds {
     pins: LedPins,
-    pad_state: PadLedsState,
-    control_button_state: ControlButtonLedsState,
+    leds_state: LedsState,
     current_bank: usize,
     current_time_slot: usize,
 }
@@ -456,63 +478,14 @@ impl Leds {
         pins.ls_en_l.set_low();
         Leds {
             pins,
-            pad_state: Default::default(),
-            control_button_state: Default::default(),
+            leds_state: Default::default(),
             current_bank: 0,
             current_time_slot: 0,
         }
     }
 
-    pub fn get_pad_state(&self) -> PadLedsState {
-        self.pad_state
-    }
-    pub fn get_pad_state_mut(&mut self) -> &mut PadLedsState {
-        &mut self.pad_state
-    }
-
-    pub fn get_button_state(&self) -> ControlButtonLedsState {
-        self.control_button_state
-    }
-
-    pub fn apply_event(&mut self, event: LedEvent) {
-        match event {
-            LedEvent::Pad(pad_led_event) => self.apply_pad_event(pad_led_event),
-            LedEvent::ControlButton(control_button_led_event) => {
-                self.apply_control_button_event(control_button_led_event)
-            }
-        }
-    }
-
-    pub fn apply_control_button_event(&mut self, event: ControlButtonLedEvent) {
-        self.control_button_state.apply_event(event);
-    }
-
-    pub fn apply_pad_event(&mut self, event: PadLedEvent) {
-        self.pad_state.apply_event(event);
-    }
-
-    /// Gets the bank values for all time slots
-    pub fn get_bank_slot_values(&mut self, bank: Bank) -> [u32; NUM_TIME_SLOTS] {
-        match bank {
-            Bank::Pad(bank) => [
-                self.pad_state.0[0][bank as usize],
-                self.pad_state.0[1][bank as usize],
-                self.pad_state.0[2][bank as usize],
-            ],
-            Bank::Control(bank) => [
-                self.control_button_state.0[0][bank as usize],
-                self.control_button_state.0[1][bank as usize],
-                self.control_button_state.0[2][bank as usize],
-            ],
-        }
-    }
-
-    pub fn set_pad_state(&mut self, state: PadLedsState) {
-        self.pad_state = state;
-    }
-
-    pub fn set_button_state(&mut self, state: ControlButtonLedsState) {
-        self.control_button_state = state;
+    pub fn set_leds_state(&mut self, leds_state: LedsState) {
+        self.leds_state = leds_state;
     }
 
     /// Sets the bank values for all time slots
@@ -520,10 +493,10 @@ impl Leds {
         for (i, v) in value.into_iter().enumerate() {
             match bank {
                 Bank::Pad(bank) => {
-                    self.pad_state.0[i][bank as usize] = v;
+                    self.leds_state.pad_state.0[i][bank as usize] = v;
                 }
                 Bank::Control(bank) => {
-                    self.control_button_state.0[i][bank as usize] = v;
+                    self.leds_state.control_button_state.0[i][bank as usize] = v;
                 }
             }
         }
@@ -548,9 +521,10 @@ impl Leds {
             }
         }
         let mut bank_value = if self.current_bank < NUM_PAD_BANKS {
-            self.pad_state.0[self.current_time_slot][self.current_bank]
+            self.leds_state.pad_state.0[self.current_time_slot][self.current_bank]
         } else {
-            self.control_button_state.0[self.current_time_slot][self.current_bank - NUM_PAD_BANKS]
+            self.leds_state.control_button_state.0[self.current_time_slot]
+                [self.current_bank - NUM_PAD_BANKS]
         };
 
         // Shift values into LED drivers

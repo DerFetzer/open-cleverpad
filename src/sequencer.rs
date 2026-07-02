@@ -8,9 +8,11 @@ use embedded_graphics::{
 use heapless::{Vec, index_set::FnvIndexSet};
 
 use crate::{
+    app::update_leds_state,
     hal::{Button, COLOR_BLACK, COLOR_WHITE, PadColor},
-    hardware::PadLedsState,
+    hardware::{LedsState, PadLedsState},
     midi::{Clock, MidiEventPacket, MidiMessage, NoteOff, NoteOn},
+    usb_midi::MidiEventPacketSender,
 };
 
 #[derive(defmt::Format, Clone, Copy, Default)]
@@ -241,25 +243,30 @@ impl SequencerChannel {
 pub const NUM_SEQUENCER_CHANNELS: usize = 4;
 
 pub struct Sequencer {
+    leds_state: LedsState,
     channels: [SequencerChannel; NUM_SEQUENCER_CHANNELS],
     active_channel: u8,
     active_octave: u8,
     step_divider: u8,
     step_counter: u8,
+    midi_sender: Option<MidiEventPacketSender>,
 }
 
 impl Sequencer {
     pub const fn new() -> Self {
         Self {
+            leds_state: LedsState::new(),
             channels: [const { SequencerChannel::new() }; NUM_SEQUENCER_CHANNELS],
             active_channel: 0,
             active_octave: 5,
             step_counter: 0,
             step_divider: 8, // 24ppqn / 8 = 4 -> 1/16th note
+            midi_sender: None,
         }
     }
 
-    pub fn init(&mut self) {
+    pub fn init(&mut self, midi_sender: MidiEventPacketSender) {
+        self.midi_sender = Some(midi_sender);
         for channel in &mut self.channels {
             channel.init();
         }
@@ -269,47 +276,56 @@ impl Sequencer {
         for channel in &mut self.channels {
             channel.reset_position();
         }
+        self.draw();
     }
 
-    pub fn draw(&self, pads: &mut PadLedsState) {
-        self.channels[self.active_channel as usize].draw(self.active_octave, pads);
+    pub fn draw(&mut self) {
+        self.channels[self.active_channel as usize]
+            .draw(self.active_octave, &mut self.leds_state.pad_state);
+        update_leds_state::spawn(self.leds_state).ok();
     }
 
     /// Has to be called with 24ppqn
-    pub fn step<F>(&mut self, mut midi_callback: F)
-    where
-        F: FnMut(MidiEventPacket),
-    {
-        midi_callback(Clock.to_bytes());
+    pub fn step(&mut self) {
+        self.midi_sender
+            .as_mut()
+            .unwrap()
+            .try_send(Clock.to_bytes())
+            .ok();
         self.step_counter = self.step_counter.wrapping_add(1);
         if self.step_counter.is_multiple_of(self.step_divider) {
             for channel in &mut self.channels {
-                channel.step(&mut midi_callback);
+                channel.step(|packet| {
+                    self.midi_sender.as_mut().unwrap().try_send(packet).ok();
+                });
             }
         }
+        self.draw();
     }
 
     pub fn set_active_channel(&mut self, channel: u8) {
         self.active_channel = channel;
+        self.draw();
     }
 
     pub fn set_active_octave(&mut self, octave: u8) {
         self.active_octave = octave;
+        self.draw();
     }
 
-    pub fn handle_button_press<F>(&mut self, button: Button, mut midi_callback: F)
-    where
-        F: FnMut(MidiEventPacket),
-    {
+    pub fn handle_button_press(&mut self, button: Button) {
         match button {
             Button::Pad(pad) => {
                 let channel = &mut self.channels[self.active_channel as usize];
                 let step = pad.x;
                 let index = pad.y;
 
-                channel.change_step(step, index, self.active_octave, midi_callback);
+                channel.change_step(step, index, self.active_octave, |packet| {
+                    self.midi_sender.as_mut().unwrap().try_send(packet).ok();
+                });
             }
             Button::Control(control_button) => {} // TODO
         }
+        self.draw();
     }
 }

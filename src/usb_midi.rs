@@ -1,4 +1,5 @@
 use heapless::spsc::Queue;
+use rtic_sync::channel::{NoReceiver, Receiver, Sender, TrySendError};
 use usb_device::class_prelude::*;
 
 use crate::{app::usb_poll_task, midi::MidiEventPacket};
@@ -17,25 +18,52 @@ const CS_ENDPOINT: u8 = 0x25;
 const MS_MIDI_IN_JACK: u8 = 0x02;
 const MS_MIDI_OUT_JACK: u8 = 0x03;
 
+pub struct MidiEventPacketSender(Sender<'static, MidiEventPacket, 32>);
+
+impl MidiEventPacketSender {
+    pub fn new(tx: Sender<'static, MidiEventPacket, 32>) -> Self {
+        Self(tx)
+    }
+
+    pub async fn send(&mut self, val: MidiEventPacket) -> Result<(), NoReceiver<MidiEventPacket>> {
+        let res = self.0.send(val).await;
+        if res.is_ok() {
+            usb_poll_task::spawn().ok();
+        }
+        res
+    }
+
+    pub fn try_send(&mut self, val: MidiEventPacket) -> Result<(), TrySendError<MidiEventPacket>> {
+        let res = self.0.try_send(val);
+        if res.is_ok() {
+            usb_poll_task::spawn().ok();
+        }
+        res
+    }
+}
+
 pub struct MidiClass<'a, B: UsbBus> {
     ac_if: InterfaceNumber,
     ms_if: InterfaceNumber,
     read_ep: EndpointOut<'a, B>,
     write_ep: EndpointIn<'a, B>,
     read_queue: Queue<MidiEventPacket, 256>,
-    write_queue: Queue<MidiEventPacket, 32>,
+    rx_midi: Receiver<'static, MidiEventPacket, 32>,
     need_zlp: bool,
 }
 
-impl<B: UsbBus> MidiClass<'_, B> {
-    pub fn new(alloc: &UsbBusAllocator<B>) -> MidiClass<'_, B> {
+impl<'a, B: UsbBus> MidiClass<'a, B> {
+    pub fn new(
+        alloc: &'a UsbBusAllocator<B>,
+        rx_midi: Receiver<'static, MidiEventPacket, 32>,
+    ) -> MidiClass<'a, B> {
         MidiClass {
             ac_if: alloc.interface(),
             ms_if: alloc.interface(),
             read_ep: alloc.bulk(64),
             write_ep: alloc.bulk(64),
             read_queue: Queue::new(),
-            write_queue: Queue::new(),
+            rx_midi,
             need_zlp: false,
         }
     }
@@ -76,7 +104,7 @@ impl<B: UsbBus> MidiClass<'_, B> {
         let mut i = 0;
 
         while !self.write_queue_is_empty() && i < 64 / 4 {
-            data[i * 4..(i * 4) + 4].copy_from_slice(&self.write_queue.dequeue().unwrap()[..]);
+            data[i * 4..(i * 4) + 4].copy_from_slice(&self.rx_midi.try_recv().unwrap()[..]);
             i += 1;
         }
 
@@ -91,24 +119,12 @@ impl<B: UsbBus> MidiClass<'_, B> {
         }
     }
 
-    pub fn enqueue(&mut self, data: MidiEventPacket) -> Result<(), MidiEventPacket> {
-        let res = self.write_queue.enqueue(data);
-        if res.is_ok() {
-            usb_poll_task::spawn().ok();
-        }
-        res
+    pub fn write_queue_is_empty(&self) -> bool {
+        self.rx_midi.is_empty()
     }
 
     pub fn dequeue(&mut self) -> Option<MidiEventPacket> {
         self.read_queue.dequeue()
-    }
-
-    pub fn write_queue_is_empty(&self) -> bool {
-        self.write_queue.is_empty()
-    }
-
-    pub fn read_queue_is_empty(&self) -> bool {
-        self.read_queue.is_empty()
     }
 
     pub fn read_queue_has_space_for_packet(&self) -> bool {
